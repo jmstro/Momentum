@@ -409,6 +409,29 @@
     .toast.show{ opacity: 1; transform: translateX(-50%) translateY(-2px); }
 
     a, button { -webkit-tap-highlight-color: transparent; }
+  
+    .dateInput{
+      appearance:none;
+      border: 1px solid var(--stroke);
+      background: var(--card2);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-weight: 700;
+      font-size: 13.5px;
+      outline:none;
+      box-shadow: 0 10px 25px rgba(0,0,0,.12);
+      touch-action: manipulation;
+    }
+    .dateInput:focus{ border-color: rgba(10,132,255,.35); box-shadow: var(--focus); }
+    .savedTiny{
+      color: var(--muted2);
+      font-size: 12px;
+      line-height: 1.2;
+      margin-left: 6px;
+      white-space: nowrap;
+    }
+
   </style>
 </head>
 
@@ -443,7 +466,9 @@
               <button class="btn ghost" id="prevDayBtn" title="Previous day">◀</button>
               <button class="btn ghost" id="nextDayBtn" title="Next day">▶</button>
               <button class="btn primary" id="jumpTodayBtn">Today</button>
-              <button class="btn" id="pickDateBtn" title="Pick a date">Date</button>
+              <input class="dateInput" type="date" id="dateInput" aria-label="Select date" />
+              <button class="btn" id="saveNowBtn" title="Force-save to your device right now">Save</button>
+              <span class="savedTiny" id="savedTiny">—</span>
             </div>
           </div>
 
@@ -575,7 +600,11 @@
     const historyListEl = document.getElementById("historyList");
     const todayTitleEl = document.getElementById("todayTitle");
 
-    const saveDot = document.getElementById("saveDot");
+    
+    const dateInputEl = document.getElementById("dateInput");
+    const saveNowBtn = document.getElementById("saveNowBtn");
+    const savedTinyEl = document.getElementById("savedTiny");
+const saveDot = document.getElementById("saveDot");
     const saveText = document.getElementById("saveText");
     const toastEl = document.getElementById("toast");
 
@@ -595,8 +624,21 @@
     document.getElementById("prevDayBtn").addEventListener("click", () => shiftDay(-1));
     document.getElementById("nextDayBtn").addEventListener("click", () => shiftDay(1));
     document.getElementById("jumpTodayBtn").addEventListener("click", () => { selectedDate = startOfDay(new Date()); render(); toast("Jumped to today"); haptic(); });
-    document.getElementById("pickDateBtn").addEventListener("click", pickDate);
-    document.getElementById("resetDayBtn").addEventListener("click", resetDay);
+
+    // Date selection + manual save
+    dateInputEl.addEventListener("change", () => {
+      if(!dateInputEl.value) return;
+      selectedDate = startOfDay(new Date(dateInputEl.value + "T00:00:00"));
+      render();
+      toast("Opened " + prettyDate(selectedDate));
+      haptic();
+    });
+    saveNowBtn.addEventListener("click", () => {
+      flushSaveNow();
+      toast("Saved");
+      haptic();
+    });
+        document.getElementById("resetDayBtn").addEventListener("click", resetDay);
     document.getElementById("wipeAllBtn").addEventListener("click", wipeAll);
     document.getElementById("copyBtn").addEventListener("click", copySummary);
     document.getElementById("exportBtn").addEventListener("click", exportJSON);
@@ -655,6 +697,7 @@
     // First paint
     resizeCanvas();
     render();
+    updateSavedTiny();
 
     // ---------- Helpers ----------
     function pad2(n){ return String(n).padStart(2,"0"); }
@@ -798,18 +841,34 @@
     }
 
     let saveTimer = null;
-    function saveState(isSettingsOnly=false){
+    let lastSavedAt = null;
+function saveState(isSettingsOnly=false){
       setSaving(true);
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
         try{
           localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+          lastSavedAt = new Date();
+          updateSavedTiny();
           setSaving(false);
         }catch(e){
           setSaving(false, true);
           toast("Save failed (storage full?)");
         }
       }, isSettingsOnly ? 0 : 120);
+    }
+
+
+    function flushSaveNow(){
+      try{
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        lastSavedAt = new Date();
+        updateSavedTiny();
+        setSaving(false);
+      }catch(e){
+        setSaving(false, true);
+        toast("Save failed (storage full?)");
+      }
     }
 
     function setSaving(isSaving, isError=false){
@@ -838,6 +897,18 @@
       toastTimer = setTimeout(()=>toastEl.classList.remove("show"), 1500);
     }
 
+    function updateSavedTiny(){
+      if(!savedTinyEl) return;
+      if(!lastSavedAt){
+        savedTinyEl.textContent = \"Not saved yet\";
+        return;
+      }
+      const t = lastSavedAt;
+      const hh = String(t.getHours()).padStart(2,\"0\");
+      const mm = String(t.getMinutes()).padStart(2,\"0\");
+      savedTinyEl.textContent = `Saved ${hh}:${mm}`;
+    }
+
     function ensureDay(dateKey){
       if(!state.days[dateKey]) state.days[dateKey] = { ...DEFAULT_DAY };
       else state.days[dateKey] = { ...DEFAULT_DAY, ...(state.days[dateKey]||{}) };
@@ -851,20 +922,6 @@
       selectedDate = startOfDay(d);
       render();
       haptic();
-    }
-
-    function pickDate(){
-      const input = document.createElement("input");
-      input.type = "date";
-      input.value = isoDateLocal(selectedDate);
-      input.onchange = () => {
-        if(!input.value) return;
-        selectedDate = startOfDay(new Date(input.value + "T00:00:00"));
-        render();
-        toast("Opened " + prettyDate(selectedDate));
-        haptic();
-      };
-      input.click();
     }
 
     function setDayField(dateKey, field, value, doRender=true){
@@ -883,6 +940,8 @@
 
     function render(){
       const key = isoDateLocal(selectedDate);
+      // keep date picker in sync
+      if(dateInputEl) dateInputEl.value = key;
       const day = ensureDay(key);
 
       todayTitleEl.textContent = prettyDate(selectedDate);
@@ -900,6 +959,7 @@
       renderChart();
     }
 
+    
     function renderInputs(key, day){
       inputsEl.innerHTML = "";
       EXERCISES.forEach(ex=>{
@@ -928,22 +988,33 @@
         const minus = document.createElement("button");
         minus.className = "btn";
         minus.textContent = "−";
-        minus.addEventListener("click", ()=>{ setRep(key, ex.key, (Number(getDay(key)[ex.key])||0) - 1); haptic(8); });
+        minus.addEventListener("click", ()=>setRep(key, ex.key, (Number(getDay(key)[ex.key])||0) - 1));
 
-        const num = document.createElement("div");
-        num.className = "num";
-        num.textContent = String(v);
+        const input = document.createElement("input");
+        input.className = "numInput";
+        input.type = "number";
+        input.inputMode = "numeric";
+        input.min = "0";
+        input.step = "1";
+        input.value = String(v);
+        input.title = "Type a number";
+        input.addEventListener("input", () => {
+          const n = parseInt(input.value, 10);
+          if(!Number.isFinite(n)) return;
+          setRep(key, ex.key, n);
+        });
 
         const plus = document.createElement("button");
         plus.className = "btn";
         plus.textContent = "+";
-        plus.addEventListener("click", ()=>{ setRep(key, ex.key, (Number(getDay(key)[ex.key])||0) + 1); haptic(8); });
+        plus.addEventListener("click", ()=>setRep(key, ex.key, (Number(getDay(key)[ex.key])||0) + 1));
 
+        // long-press for faster increments (iOS feels nice)
         addHoldRepeat(plus, () => setRep(key, ex.key, (Number(getDay(key)[ex.key])||0) + 1));
         addHoldRepeat(minus, () => setRep(key, ex.key, (Number(getDay(key)[ex.key])||0) - 1));
 
         stepper.appendChild(minus);
-        stepper.appendChild(num);
+        stepper.appendChild(input);
         stepper.appendChild(plus);
 
         field.appendChild(left);
@@ -953,22 +1024,8 @@
       });
     }
 
-    function totalsForLastNDays(n){
-      const today = startOfDay(new Date());
-      let total = 0, weightCount = 0, weightSum = 0;
-      for(let i=0;i<n;i++){
-        const d = new Date(today);
-        d.setDate(d.getDate()-i);
-        const key = isoDateLocal(d);
-        const obj = state.days[key] || null;
-        total += sumReps(obj);
-        const w = obj && obj.weight != null ? Number(obj.weight) : null;
-        if(Number.isFinite(w)){ weightCount++; weightSum += w; }
-      }
-      return { total, avg: total / n, weightAvg: weightCount ? (weightSum/weightCount) : null };
-    }
-
     function renderStats(){
+
       const todayKey = isoDateLocal(selectedDate);
       const today = getDay(todayKey);
       const repsTotal = sumReps(today);
