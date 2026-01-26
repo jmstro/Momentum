@@ -483,6 +483,7 @@ const groupCreateSubmit = document.getElementById("groupCreateSubmit");
 const authModal = document.getElementById("authModal");
 const authCloseBtn = document.getElementById("authCloseBtn");
 const authMode = document.getElementById("authMode");
+const authFields = document.getElementById("authFields");
 const authEmail = document.getElementById("authEmail");
 const authPassword = document.getElementById("authPassword");
 const authUsername = document.getElementById("authUsername");
@@ -3838,13 +3839,16 @@ function updateAccountUI() {
     : "Signed in";
   if (logoutBtn) logoutBtn.hidden = false;
   if (mobileAccountBtn) mobileAccountBtn.textContent = "Account";
+  if (authModal && !authModal.hidden) {
+    setAuthModalState(true);
+  }
 }
 
 function openAuthModal() {
   if (!authModal) return;
   authModal.hidden = false;
   setAuthMessage("");
-  setAuthMode("signin");
+  setAuthModalState(!!authUser);
 }
 
 function closeAuthModal() {
@@ -3865,6 +3869,36 @@ function setAuthMode(mode) {
   if (signupExtra) signupExtra.hidden = nextMode !== "signup";
   if (authSubtitle) {
     authSubtitle.textContent = nextMode === "signup" ? "Create your Momentum profile." : "Sign in to sync your data.";
+  }
+}
+
+function setAuthModalState(isSignedIn) {
+  if (authMode) {
+    authMode.hidden = isSignedIn;
+    authMode.style.display = isSignedIn ? "none" : "";
+  }
+  if (authFields) {
+    authFields.hidden = isSignedIn;
+    authFields.style.display = isSignedIn ? "none" : "";
+  }
+  if (authSubmitBtn) {
+    authSubmitBtn.hidden = isSignedIn;
+    authSubmitBtn.style.display = isSignedIn ? "none" : "";
+  }
+  if (logoutBtn) {
+    logoutBtn.hidden = !isSignedIn;
+    logoutBtn.style.display = isSignedIn ? "" : "none";
+  }
+  if (authSubtitle) {
+    if (isSignedIn) {
+      const name = currentProfile?.display_name || currentProfile?.username || "your account";
+      authSubtitle.textContent = `Signed in as ${name}.`;
+    } else {
+      authSubtitle.textContent = "Sign in to sync your data.";
+    }
+  }
+  if (!isSignedIn) {
+    setAuthMode("signin");
   }
 }
 
@@ -3951,6 +3985,9 @@ async function handleSignOut() {
   authUser = null;
   currentProfile = null;
   updateAccountUI();
+  if (authModal && !authModal.hidden) {
+    setAuthModalState(false);
+  }
   toast("Signed out.");
 }
 

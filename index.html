@@ -527,30 +527,32 @@
         <button data-mode="signup" role="tab" aria-selected="false">Sign up</button>
       </div>
       <div class="auth-form">
-        <label for="authEmail">Email</label>
-        <input class="inputText" id="authEmail" inputmode="email" placeholder="you@example.com" />
-        <label for="authPassword">Password</label>
-        <input class="inputText" id="authPassword" type="password" placeholder="At least 8 characters" />
-        <div id="signupExtra" hidden>
-          <label for="authUsername">Username</label>
-          <input class="inputText" id="authUsername" placeholder="username" />
-          <label for="authAge">Age</label>
-          <input class="inputText" id="authAge" inputmode="numeric" placeholder="18" />
-          <label for="authGender">Gender</label>
-          <select class="inputText" id="authGender">
-            <option value="">Select</option>
-            <option value="male">Male</option>
-            <option value="female">Female</option>
-          </select>
-          <label for="authHeight">Height</label>
-          <div class="inline">
-            <input class="inputText" id="authHeight" inputmode="numeric" placeholder="0" />
-            <span class="unit-label" id="authHeightUnit">in</span>
-          </div>
-          <label for="authStartingWeight">Starting weight</label>
-          <div class="inline">
-            <input class="inputText" id="authStartingWeight" inputmode="decimal" placeholder="0.0" />
-            <span class="unit-label" id="authWeightUnit">lb</span>
+        <div id="authFields">
+          <label for="authEmail">Email</label>
+          <input class="inputText" id="authEmail" inputmode="email" placeholder="you@example.com" />
+          <label for="authPassword">Password</label>
+          <input class="inputText" id="authPassword" type="password" placeholder="At least 8 characters" />
+          <div id="signupExtra" hidden>
+            <label for="authUsername">Username</label>
+            <input class="inputText" id="authUsername" placeholder="username" />
+            <label for="authAge">Age</label>
+            <input class="inputText" id="authAge" inputmode="numeric" placeholder="18" />
+            <label for="authGender">Gender</label>
+            <select class="inputText" id="authGender">
+              <option value="">Select</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </select>
+            <label for="authHeight">Height</label>
+            <div class="inline">
+              <input class="inputText" id="authHeight" inputmode="numeric" placeholder="0" />
+              <span class="unit-label" id="authHeightUnit">in</span>
+            </div>
+            <label for="authStartingWeight">Starting weight</label>
+            <div class="inline">
+              <input class="inputText" id="authStartingWeight" inputmode="decimal" placeholder="0.0" />
+              <span class="unit-label" id="authWeightUnit">lb</span>
+            </div>
           </div>
         </div>
         <div class="modal-actions">
