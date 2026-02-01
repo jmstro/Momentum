@@ -138,7 +138,7 @@ class TapLockScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("bg_space", assetUrl("assets/bg_space.png"));
+    this.load.image("bg_space", assetUrl("bg_space.png"));
   }
 
   create() {

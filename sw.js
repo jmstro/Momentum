@@ -1,13 +1,13 @@
-const CACHE_NAME = "taplock-v2";
+const CACHE_NAME = "taplock-v3";
 const PRECACHE_URLS = [
   "./index.html",
   "./main.js",
-  "./assets/bg_space.png",
+  "./bg_space.png",
+  "./background.png",
   "./manifest.webmanifest",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
-  "./icons/maskable-512.png",
-  "./icons/favicon.ico",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./favicon.ico",
   "https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"
 ];
 
