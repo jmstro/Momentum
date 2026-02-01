@@ -44,12 +44,17 @@ const GLOW_END = {
 };
 
 const UI_FONT = '"Orbitron", "Rajdhani", "Segoe UI", system-ui, -apple-system';
-const ASSET_VERSION = (typeof window !== "undefined" && window.ASSET_VERSION)
-  ? window.ASSET_VERSION
-  : Date.now().toString();
+const IS_FILE_PROTOCOL = (typeof window !== "undefined" && window.location)
+  ? window.location.protocol === "file:"
+  : false;
 const assetUrl = (path) => {
+  if (IS_FILE_PROTOCOL) return path;
+  const version = (typeof window !== "undefined" && window.ASSET_VERSION)
+    ? window.ASSET_VERSION
+    : "";
+  if (!version) return path;
   const sep = path.includes("?") ? "&" : "?";
-  return path + sep + "v=" + ASSET_VERSION;
+  return path + sep + "v=" + version;
 };
 
 class TapLockScene extends Phaser.Scene {

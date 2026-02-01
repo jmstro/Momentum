@@ -30,22 +30,65 @@
 <body>
   <div id="game"></div>
 
-  <!-- Phaser 3 via CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
   <script>
     const ASSET_VERSION = Date.now().toString();
+    const isFile = window.location && window.location.protocol === "file:";
     window.ASSET_VERSION = ASSET_VERSION;
     const cacheBust = (url) => {
+      if (isFile) return url;
       const sep = url.includes("?") ? "&" : "?";
       return url + sep + "v=" + ASSET_VERSION;
     };
-    document.querySelectorAll("link[data-cache-bust]").forEach((link) => {
-      const href = link.getAttribute("href");
-      if (href) link.setAttribute("href", cacheBust(href));
+    const loadScript = (src) => new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = src;
+      script.async = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => reject(new Error("Failed to load " + src));
+      document.head.appendChild(script);
     });
-    const mainScript = document.createElement("script");
-    mainScript.src = cacheBust("./main.js");
-    document.body.appendChild(mainScript);
+    const showBootError = (message) => {
+      const el = document.createElement("div");
+      el.style.cssText = "position:fixed;inset:0;background:#0b0f1a;color:#cfe2ff;font:16px/1.4 Arial,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;z-index:9999;";
+      el.textContent = message;
+      document.body.appendChild(el);
+    };
+    const PHASER_URLS = [
+      "https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js",
+      "https://unpkg.com/phaser@3.80.1/dist/phaser.min.js",
+      "https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js"
+    ];
+    const loadPhaser = async () => {
+      if (window.Phaser) return true;
+      for (const url of PHASER_URLS) {
+        try {
+          await loadScript(url);
+          if (window.Phaser) return true;
+        } catch (err) {}
+      }
+      return false;
+    };
+    const boot = async () => {
+      const phaserOk = await loadPhaser();
+      if (!phaserOk) {
+        showBootError("Phaser failed to load. Check your connection or try a local server.");
+        return;
+      }
+      document.querySelectorAll("link[data-cache-bust]").forEach((link) => {
+        const href = link.getAttribute("href");
+        if (href) link.setAttribute("href", cacheBust(href));
+      });
+      try {
+        await loadScript(cacheBust("./main.js"));
+      } catch (err) {
+        try {
+          await loadScript("./main.js");
+        } catch (err2) {
+          showBootError("main.js failed to load. Please refresh or clear cache.");
+        }
+      }
+    };
+    boot();
   </script>
   <script>
     if ("serviceWorker" in navigator) {
