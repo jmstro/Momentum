@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f1a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>TapLock</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="manifest" href="./manifest.webmanifest" data-cache-bust />
+  <link rel="icon" href="./icons/favicon.ico" data-cache-bust />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" data-cache-bust />
+  <style>
+    :root {
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+    }
+    html, body { margin:0; padding:0; height:100%; background:#0b0f1a; overflow:hidden; touch-action:manipulation; }
+    #game { width:100%; height:100%; }
+    /* Prevent text selection / highlight on mobile */
+    * { -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+  </style>
+</head>
+<body>
+  <div id="game"></div>
+
+  <script>
+    const ASSET_VERSION = Date.now().toString();
+    const isFile = window.location && window.location.protocol === "file:";
+    window.ASSET_VERSION = ASSET_VERSION;
+    const cacheBust = (url) => {
+      if (isFile) return url;
+      const sep = url.includes("?") ? "&" : "?";
+      return url + sep + "v=" + ASSET_VERSION;
+    };
+    const loadScript = (src) => new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = src;
+      script.async = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => reject(new Error("Failed to load " + src));
+      document.head.appendChild(script);
+    });
+    const showBootError = (message) => {
+      const el = document.createElement("div");
+      el.style.cssText = "position:fixed;inset:0;background:#0b0f1a;color:#cfe2ff;font:16px/1.4 Arial,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;z-index:9999;";
+      el.textContent = message;
+      document.body.appendChild(el);
+    };
+    const PHASER_URLS = [
+      "https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js",
+      "https://unpkg.com/phaser@3.80.1/dist/phaser.min.js",
+      "https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js"
+    ];
+    const loadPhaser = async () => {
+      if (window.Phaser) return true;
+      for (const url of PHASER_URLS) {
+        try {
+          await loadScript(url);
+          if (window.Phaser) return true;
+        } catch (err) {}
+      }
+      return false;
+    };
+    const boot = async () => {
+      const phaserOk = await loadPhaser();
+      if (!phaserOk) {
+        showBootError("Phaser failed to load. Check your connection or try a local server.");
+        return;
+      }
+      document.querySelectorAll("link[data-cache-bust]").forEach((link) => {
+        const href = link.getAttribute("href");
+        if (href) link.setAttribute("href", cacheBust(href));
+      });
+      try {
+        await loadScript(cacheBust("./main.js"));
+      } catch (err) {
+        try {
+          await loadScript("./main.js");
+        } catch (err2) {
+          showBootError("main.js failed to load. Please refresh or clear cache.");
+        }
+      }
+    };
+    boot();
+  </script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js");
+    }
+  </script>
+</body>
+</html>
