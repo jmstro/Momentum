@@ -21,6 +21,30 @@ const GAME = {
   dailyMaxAttempts: 3
 };
 
+// Ring skins (visual only)
+const SKINS = [
+  { id: "default", name: "NEON BLUE", unlockScore: 0, colors: { ring: 0x142033, glow: 0x2a6bff, zone: 0x7dd3fc }, prestige: false },
+  { id: "neon_pulse", name: "NEON PULSE", unlockScore: 10, colors: { ring: 0x142033, glow: 0x2a6bff, zone: 0x7dd3fc }, prestige: false },
+  { id: "plasma_violet", name: "PLASMA VIOLET", unlockScore: 20, colors: { ring: 0x201032, glow: 0x7c3aed, zone: 0xff4dff }, prestige: false },
+  { id: "solar_gold", name: "SOLAR GOLD", unlockScore: 30, colors: { ring: 0x2a1a08, glow: 0xff9f1a, zone: 0xffc34d }, prestige: true }
+];
+
+const RING_HOT = {
+  default: 0x2a6bff,
+  neon_pulse: 0x2a6bff,
+  plasma_violet: 0xb026ff,
+  solar_gold: 0xff9f1a
+};
+
+const GLOW_END = {
+  default: 0x7dd3fc,
+  neon_pulse: 0x7dd3fc,
+  plasma_violet: 0xff4dff,
+  solar_gold: 0xffe08a
+};
+
+const UI_FONT = '"Orbitron", "Rajdhani", "Segoe UI", system-ui, -apple-system';
+
 class TapLockScene extends Phaser.Scene {
   constructor() {
     super("TapLockScene");
@@ -59,26 +83,120 @@ class TapLockScene extends Phaser.Scene {
     this.lastVibrateAt = 0;
     this.settingsOpen = false;
     this.uiPointerDown = false;
+    this.enableExtraGlow = false;
+    this.settingsGlow = null;
+    this.settingsTitleGlow = null;
+    this.settingsPanelGlow = null;
+    this.ringPulse = 0;
+    this.bgShift = 0;
+    this.ringGlowTextureKey = "ring_glow_tex";
+    this.flashGlowTextureKey = "flash_glow_tex";
+    this.ringAura = null;
+    this.ringHalo = null;
+    this.flashSprite = null;
+    this.ringAuraBaseScale = 1;
+    this.ringHaloBaseScale = 1;
+    this.flashBaseScale = 1;
+    this.gRingGlow = null;
+    this.gRingCore = null;
+    this.gZone = null;
+    this.bgImgFar = null;
+    this.bgImgBloom = null;
+    this.screenFlash = null;
+    this.perfectPulse = 0;
+    this.impactFlashAlpha = 0;
+    this.impactFlashX = 0;
+    this.impactFlashY = 0;
+    this.impactFlashRadius = 0;
+    this.perfectFlashDuration = 200;
+    this.perfectFlashTime = this.perfectFlashDuration;
+    this.perfectFlashAlpha = 0;
+    this.perfectFlashRadius = 0;
+    this.perfectFlashScreenAlpha = 0;
+    this.baseRingColor = SKINS[0].colors.ring;
+    this.hotRingColor = RING_HOT.default;
+    this.activeGlowStart = SKINS[0].colors.glow;
+    this.activeGlowEnd = GLOW_END.default;
+    this.activeZoneOuter = SKINS[0].colors.zone;
+    this.activeZoneCore = 0xffffff;
+    this.activeParticleTint = SKINS[0].colors.zone;
+    this.activeSkinIsPrestige = false;
+    this.unlockedSkins = [];
+    this.activeSkinId = "default";
+  }
+
+  preload() {
+    this.load.image("bg_space", "assets/bg_space.png");
   }
 
   create() {
     const { width, height } = this.scale;
 
-    this.cx = width / 2;
-    this.cy = height / 2;
-    this.r = Math.min(width, height) * 0.28;
-    this.rMarker = this.r * 0.06;
+    this.readSafeAreaInsets();
+    this.updateLayoutMetrics();
 
-    this.add.rectangle(this.cx, this.cy, width, height, 0x0b0f1a).setDepth(-10);
+    // Removed any full-screen Graphics fillRect background; using bg_space.png layers instead.
+    if (this.textures.exists("bg_space")) {
+      this.bgImgFar = this.add.image(this.cx, this.cy, "bg_space").setDepth(-60).setAlpha(0.35);
+      this.bgImgFar.setScrollFactor(0);
+      this.fitImageToScreen(this.bgImgFar);
+      this.bgImgFar.setScale(this.bgImgFar.scale * 1.08);
+      this.bgImgFar.setTint(0x5069a8);
 
-    this.gRing = this.add.graphics();
-    this.gZone = this.add.graphics();
-    this.gMarker = this.add.graphics();
+      this.bgImg = this.add.image(this.cx, this.cy, "bg_space").setDepth(-50);
+      this.bgImg.setScrollFactor(0);
+      this.fitImageToScreen(this.bgImg);
+      this.bgImg.setScale(this.bgImg.scale * 1.02);
+
+      this.bgImgBloom = this.add.image(this.cx, this.cy, "bg_space").setDepth(-40).setAlpha(0.18);
+      this.bgImgBloom.setScrollFactor(0);
+      this.fitImageToScreen(this.bgImgBloom);
+      this.bgImgBloom.setScale(this.bgImgBloom.scale * 1.05);
+      this.bgImgBloom.setBlendMode(Phaser.BlendModes.ADD);
+      this.bgImgBloom.setTint(0x7dd3fc);
+    } else {
+      this.bgImg = null;
+      this.bgImgFar = null;
+      this.bgImgBloom = null;
+    }
+    this.gBg = null;
+    this.stars = [];
+
+    this.createGlowTextures();
+    this.ringAura = this.add.image(this.cx, this.cy, this.ringGlowTextureKey)
+      .setDepth(1)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setAlpha(0.18);
+    this.ringHalo = this.add.image(this.cx, this.cy, this.ringGlowTextureKey)
+      .setDepth(3)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setAlpha(0.12);
+    this.ringAuraBaseScale = (this.r * 3.4) / this.ringAura.width;
+    this.ringHaloBaseScale = (this.r * 2.3) / this.ringHalo.width;
+    this.ringAura.setScale(this.ringAuraBaseScale);
+    this.ringHalo.setScale(this.ringHaloBaseScale);
+
+    this.gRingGlow = this.add.graphics().setDepth(4).setBlendMode(Phaser.BlendModes.ADD);
+    this.gRingCore = this.add.graphics().setDepth(5).setBlendMode(Phaser.BlendModes.ADD);
+    this.gZone = this.add.graphics().setDepth(6).setBlendMode(Phaser.BlendModes.ADD);
+    this.gMarker = this.add.graphics().setDepth(7).setBlendMode(Phaser.BlendModes.ADD);
+    this.gImpact = this.add.graphics().setDepth(8).setBlendMode(Phaser.BlendModes.ADD);
+    this.flashSprite = this.add.image(this.cx, this.cy, this.flashGlowTextureKey)
+      .setDepth(9)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setAlpha(0);
+    this.flashBaseScale = (this.r * 2.8) / this.flashSprite.width;
+    this.flashSprite.setScale(this.flashBaseScale);
+    this.screenFlash = this.add.rectangle(this.cx, this.cy, width, height, 0xffffff, 0)
+      .setDepth(10)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setScrollFactor(0);
 
     this.loadSettings();
+    this.loadSkinState();
 
     // Particle textures + emitters (generated, no assets)
-    if (!this.textures.exists("p_dot") || !this.textures.exists("p_ring")) {
+    if (!this.textures.exists("p_dot") || !this.textures.exists("p_ring") || !this.textures.exists("p_spark")) {
       const g = this.make.graphics({ x: 0, y: 0, add: false });
       if (!this.textures.exists("p_dot")) {
         g.fillStyle(0xffffff, 1);
@@ -90,6 +208,12 @@ class TapLockScene extends Phaser.Scene {
         g.lineStyle(2, 0xffffff, 0.9);
         g.strokeCircle(8, 8, 5);
         g.generateTexture("p_ring", 16, 16);
+        g.clear();
+      }
+      if (!this.textures.exists("p_spark")) {
+        g.fillStyle(0xffffff, 1);
+        g.fillRect(7, 0, 2, 16);
+        g.generateTexture("p_spark", 16, 16);
       }
       g.destroy();
     }
@@ -105,7 +229,7 @@ class TapLockScene extends Phaser.Scene {
 
     this.perfectEmitter = this.add.particles(0, 0, "p_dot", {
       emitting: false,
-      lifespan: { min: 200, max: 350 },
+      lifespan: { min: 700, max: 1200 },
       speed: { min: 60, max: 140 },
       scale: { start: 1.05, end: 0 },
       alpha: { start: 1, end: 0 },
@@ -117,7 +241,8 @@ class TapLockScene extends Phaser.Scene {
       lifespan: { min: 260, max: 520 },
       speed: { min: 140, max: 260 },
       scale: { start: 1.0, end: 0 },
-      alpha: { start: 0.95, end: 0 }
+      alpha: { start: 0.95, end: 0 },
+      blendMode: "ADD"
     }).setDepth(6);
 
     this.missRingEmitter = this.add.particles(0, 0, "p_ring", {
@@ -129,51 +254,108 @@ class TapLockScene extends Phaser.Scene {
       blendMode: "ADD"
     }).setDepth(6);
 
-    this.scoreText = this.add.text(this.cx, this.cy - this.r * 1.55, "0", {
-      fontFamily: "Arial, system-ui, -apple-system",
-      fontSize: Math.floor(Math.min(width, height) * 0.07) + "px",
-      color: "#ffffff"
+    this.perfectRayEmitter = this.add.particles(0, 0, "p_spark", {
+      emitting: false,
+      lifespan: { min: 160, max: 260 },
+      speed: { min: 180, max: 320 },
+      scale: { start: 0.9, end: 0 },
+      alpha: { start: 0.9, end: 0 },
+      angle: { min: 0, max: 360 },
+      blendMode: "ADD"
+    }).setDepth(6);
+
+    this.ambientEmitter = this.add.particles(0, 0, "p_dot", {
+      x: { min: 0, max: width },
+      y: { min: 0, max: height },
+      lifespan: 8000,
+      speedY: { min: -6, max: -2 },
+      scale: { start: 0.6, end: 0 },
+      alpha: { start: 0.08, end: 0 },
+      quantity: 1,
+      frequency: 500
+    }).setDepth(-9);
+
+    this.centerScoreGlow = this.add.text(this.cx, this.cy, "0", {
+      fontFamily: UI_FONT,
+      fontSize: Math.floor(this.r * 0.72) + "px",
+      color: "#7dd3fc",
+      fontStyle: "700",
+      letterSpacing: 1
+    }).setOrigin(0.5).setAlpha(0.34).setScale(1.12).setBlendMode(Phaser.BlendModes.ADD);
+
+    this.centerScoreText = this.add.text(this.cx, this.cy, "0", {
+      fontFamily: UI_FONT,
+      fontSize: Math.floor(this.r * 0.72) + "px",
+      color: "#ffffff",
+      fontStyle: "700",
+      letterSpacing: 1
     }).setOrigin(0.5);
 
-    this.bestText = this.add.text(this.cx, this.cy - this.r * 1.25, "BEST 0", {
-      fontFamily: "Arial, system-ui, -apple-system",
-      fontSize: Math.floor(Math.min(width, height) * 0.03) + "px",
-      color: "#9aa7c7"
+    this.centerBestGlow = this.add.text(this.cx, this.cy + this.r * 0.48, "BEST 0", {
+      fontFamily: UI_FONT,
+      fontSize: Math.floor(this.r * 0.18) + "px",
+      color: "#7dd3fc",
+      fontStyle: "600",
+      letterSpacing: 2
+    }).setOrigin(0.5).setAlpha(0.26).setScale(1.16).setBlendMode(Phaser.BlendModes.ADD);
+
+    this.centerBestText = this.add.text(this.cx, this.cy + this.r * 0.48, "BEST 0", {
+      fontFamily: UI_FONT,
+      fontSize: Math.floor(this.r * 0.18) + "px",
+      color: "#e9f2ff",
+      fontStyle: "600",
+      letterSpacing: 2
     }).setOrigin(0.5);
 
-    this.attemptsText = this.add.text(this.cx, this.bestText.y + this.r * 0.22, "ATTEMPTS: 0 / 3", {
-      fontFamily: "Arial, system-ui, -apple-system",
+    this.skinNameText = this.add.text(this.cx, this.cy + this.r * 0.68, "", {
+      fontFamily: UI_FONT,
+      fontSize: Math.floor(this.r * 0.16) + "px",
+      color: "#cfe2ff",
+      fontStyle: "600",
+      letterSpacing: 1
+    }).setOrigin(0.5).setAlpha(0);
+
+    const baseMargin = Math.max(10, Math.min(width, height) * 0.03);
+    const topOffset = (this.safeTop || 0) + baseMargin;
+    const attemptsInitialY = topOffset + Math.max(42, this.r * 0.25);
+
+    this.attemptsGlow = this.add.text(this.cx, attemptsInitialY, "ATTEMPTS: 0 / 3", {
+      fontFamily: UI_FONT,
       fontSize: Math.floor(Math.min(width, height) * 0.026) + "px",
-      color: "#9aa7c7"
+      color: "#7dd3fc",
+      fontStyle: "600",
+      letterSpacing: 1
+    }).setOrigin(0.5).setAlpha(0.2).setScale(1.1).setBlendMode(Phaser.BlendModes.ADD).setVisible(false);
+
+    this.attemptsText = this.add.text(this.cx, attemptsInitialY, "ATTEMPTS: 0 / 3", {
+      fontFamily: UI_FONT,
+      fontSize: Math.floor(Math.min(width, height) * 0.026) + "px",
+      color: "#9aa7c7",
+      fontStyle: "600",
+      letterSpacing: 1
     }).setOrigin(0.5).setVisible(false);
 
-    const modeFontSize = Math.floor(Math.min(width, height) * 0.026) + "px";
-    const modeY = this.bestText.y - this.r * 0.34;
-    this.modeClassicText = this.add.text(0, modeY, "CLASSIC", {
-      fontFamily: "Arial, system-ui, -apple-system",
-      fontSize: modeFontSize,
-      color: "#ffffff"
-    }).setOrigin(0.5);
-    this.modeDailyText = this.add.text(0, modeY, "DAILY", {
-      fontFamily: "Arial, system-ui, -apple-system",
-      fontSize: modeFontSize,
-      color: "#9aa7c7"
-    }).setOrigin(0.5);
+    this.createModePill();
 
-    const modeGap = Math.max(14, this.r * 0.14);
-    const modeTotalWidth = this.modeClassicText.width + this.modeDailyText.width + modeGap;
-    this.modeClassicText.setX(this.cx - modeTotalWidth / 2 + this.modeClassicText.width / 2);
-    this.modeDailyText.setX(this.cx + modeTotalWidth / 2 - this.modeDailyText.width / 2);
-    this.makeModeButton(this.modeClassicText, "classic");
-    this.makeModeButton(this.modeDailyText, "daily");
+    this.hintGlow = this.add.text(this.cx, this.cy + this.r * 1.55, "TAP TO START", {
+      fontFamily: UI_FONT,
+      fontSize: Math.floor(Math.min(width, height) * 0.03) + "px",
+      color: "#7dd3fc",
+      fontStyle: "600",
+      letterSpacing: 3
+    }).setOrigin(0.5).setAlpha(0.28).setScale(1.12).setBlendMode(Phaser.BlendModes.ADD);
 
     this.hintText = this.add.text(this.cx, this.cy + this.r * 1.55, "TAP TO START", {
-      fontFamily: "Arial, system-ui, -apple-system",
+      fontFamily: UI_FONT,
       fontSize: Math.floor(Math.min(width, height) * 0.03) + "px",
-      color: "#9aa7c7"
+      color: "#9aa7c7",
+      fontStyle: "600",
+      letterSpacing: 3
     }).setOrigin(0.5);
 
     this.createSettingsUI();
+    this.layoutHud();
+    this.applySkinById(this.activeSkinId, true);
 
     // Game over overlay
     this.overGroup = this.add.container(0, 0).setVisible(false).setDepth(10);
@@ -183,26 +365,47 @@ class TapLockScene extends Phaser.Scene {
     const panel = this.add.rectangle(this.cx, this.cy, panelW, panelH, 0x111a2e, 0.92)
       .setStrokeStyle(2, 0x2a3a6a, 1);
 
+    const overlayGlowHex = "#" + this.activeParticleTint.toString(16).padStart(6, "0");
+    this.overTitleGlow = this.add.text(this.cx, this.cy - panelH * 0.24, "GAME OVER", {
+      fontFamily: UI_FONT,
+      fontSize: Math.floor(Math.min(width, height) * 0.04) + "px",
+      color: overlayGlowHex
+    }).setOrigin(0.5).setAlpha(0.28).setScale(1.12).setBlendMode(Phaser.BlendModes.ADD);
     this.overTitle = this.add.text(this.cx, this.cy - panelH * 0.24, "GAME OVER", {
-      fontFamily: "Arial, system-ui, -apple-system",
+      fontFamily: UI_FONT,
       fontSize: Math.floor(Math.min(width, height) * 0.04) + "px",
       color: "#ffffff"
     }).setOrigin(0.5);
 
+    this.overScoreGlow = this.add.text(this.cx, this.cy - panelH * 0.02, "Score: 0", {
+      fontFamily: UI_FONT,
+      fontSize: Math.floor(Math.min(width, height) * 0.03) + "px",
+      color: overlayGlowHex
+    }).setOrigin(0.5).setAlpha(0.24).setScale(1.1).setBlendMode(Phaser.BlendModes.ADD);
     this.overScore = this.add.text(this.cx, this.cy - panelH * 0.02, "Score: 0", {
-      fontFamily: "Arial, system-ui, -apple-system",
+      fontFamily: UI_FONT,
       fontSize: Math.floor(Math.min(width, height) * 0.03) + "px",
       color: "#cfe2ff"
     }).setOrigin(0.5);
 
+    this.overBestGlow = this.add.text(this.cx, this.cy + panelH * 0.10, "Best: 0", {
+      fontFamily: UI_FONT,
+      fontSize: Math.floor(Math.min(width, height) * 0.03) + "px",
+      color: overlayGlowHex
+    }).setOrigin(0.5).setAlpha(0.22).setScale(1.1).setBlendMode(Phaser.BlendModes.ADD);
     this.overBest = this.add.text(this.cx, this.cy + panelH * 0.10, "Best: 0", {
-      fontFamily: "Arial, system-ui, -apple-system",
+      fontFamily: UI_FONT,
       fontSize: Math.floor(Math.min(width, height) * 0.03) + "px",
       color: "#cfe2ff"
     }).setOrigin(0.5);
 
+    this.overCTAGlow = this.add.text(this.cx, this.cy + panelH * 0.18, "CHOOSE", {
+      fontFamily: UI_FONT,
+      fontSize: Math.floor(Math.min(width, height) * 0.026) + "px",
+      color: overlayGlowHex
+    }).setOrigin(0.5).setAlpha(0.22).setScale(1.08).setBlendMode(Phaser.BlendModes.ADD);
     this.overCTA = this.add.text(this.cx, this.cy + panelH * 0.18, "CHOOSE", {
-      fontFamily: "Arial, system-ui, -apple-system",
+      fontFamily: UI_FONT,
       fontSize: Math.floor(Math.min(width, height) * 0.026) + "px",
       color: "#9aa7c7"
     }).setOrigin(0.5);
@@ -234,9 +437,13 @@ class TapLockScene extends Phaser.Scene {
 
     this.overGroup.add([
       panel,
+      this.overTitleGlow,
       this.overTitle,
+      this.overScoreGlow,
       this.overScore,
+      this.overBestGlow,
       this.overBest,
+      this.overCTAGlow,
       this.overCTA,
       this.retryButton.container,
       this.continueButton.container,
@@ -248,7 +455,7 @@ class TapLockScene extends Phaser.Scene {
     this.adOverlay = this.add.container(0, 0).setVisible(false).setDepth(20);
     const adBg = this.add.rectangle(this.cx, this.cy, width, height, 0x0b0f1a, 0.88);
     this.adText = this.add.text(this.cx, this.cy, "WATCHING AD...", {
-      fontFamily: "Arial, system-ui, -apple-system",
+      fontFamily: UI_FONT,
       fontSize: Math.floor(Math.min(width, height) * 0.04) + "px",
       color: "#ffffff"
     }).setOrigin(0.5);
@@ -258,12 +465,12 @@ class TapLockScene extends Phaser.Scene {
     this.dailyLockOverlay = this.add.container(0, 0).setVisible(false).setDepth(25);
     const lockBg = this.add.rectangle(this.cx, this.cy, width, height, 0x0b0f1a, 0.8);
     this.dailyLockTitle = this.add.text(this.cx, this.cy - this.r * 0.1, "NO ATTEMPTS LEFT", {
-      fontFamily: "Arial, system-ui, -apple-system",
+      fontFamily: UI_FONT,
       fontSize: Math.floor(Math.min(width, height) * 0.04) + "px",
       color: "#ffffff"
     }).setOrigin(0.5);
     this.dailyLockSub = this.add.text(this.cx, this.cy + this.r * 0.06, "Next Daily in 00:00", {
-      fontFamily: "Arial, system-ui, -apple-system",
+      fontFamily: UI_FONT,
       fontSize: Math.floor(Math.min(width, height) * 0.03) + "px",
       color: "#9aa7c7"
     }).setOrigin(0.5);
@@ -280,11 +487,14 @@ class TapLockScene extends Phaser.Scene {
     this.best = Number.isFinite(saved) ? saved : 0;
     this.ensureDailyData();
     this.updateBestText();
-    this.updateModeUI();
+    this.updateModeUI(true);
     this.updateAttemptsText();
     this.updateSettingsUI();
 
     this.resetRound(true);
+    this.updateSettingsButtonState();
+
+    this.applyGlowPreference();
 
     // Resume audio when returning from background.
     this.visibilityHandler = () => {
@@ -322,6 +532,9 @@ class TapLockScene extends Phaser.Scene {
     this.adWatchedThisDeath = false;
     this.ignoreTapUntil = 0;
     this.revivePulse = 0;
+    this.perfectFlashTime = this.perfectFlashDuration;
+    this.perfectFlashAlpha = 0;
+    this.perfectFlashScreenAlpha = 0;
     this.adPlaying = false;
     this.isShowingInterstitial = false;
     this.time.timeScale = 1;
@@ -330,21 +543,591 @@ class TapLockScene extends Phaser.Scene {
       this.perfectSlowMoTimeoutId = null;
     }
 
-    this.scoreText.setText("0");
+    if (this.centerScoreText) {
+      this.centerScoreText.setText("0");
+      this.centerScoreText.setScale(1);
+    }
+    if (this.centerScoreGlow) {
+      this.centerScoreGlow.setText("0");
+      this.centerScoreGlow.setScale(1.12);
+      this.centerScoreGlow.setAlpha(0.34);
+    }
     this.updateBestText();
     this.updateAttemptsText();
     this.hintText.setVisible(showHint);
+    this.hintText.setAlpha(1);
+    if (this.hintGlow) {
+      this.hintGlow.setVisible(showHint);
+      this.hintGlow.setAlpha(0.3);
+    }
     this.overGroup.setVisible(false);
     if (this.adOverlay) this.adOverlay.setVisible(false);
     if (this.dailyLockOverlay) this.dailyLockOverlay.setVisible(false);
     if (this.retryButton) this.retryButton.setEnabled(true);
     if (this.continueButton) this.updateContinueButton();
     this.hideSettingsPanel();
+    this.updateSettingsButtonState();
 
     this.cameras.main.flash(80, 255, 255, 255);
   }
 
   // Daily mode helpers (date key + seeded RNG)
+  readSafeAreaInsets() {
+    const styles = getComputedStyle(document.documentElement);
+    const parsePx = (value) => {
+      const n = parseFloat((value || "").toString().replace("px", "").trim());
+      return Number.isFinite(n) ? n : 0;
+    };
+    this.safeTop = parsePx(styles.getPropertyValue("--safe-top"));
+    this.safeRight = parsePx(styles.getPropertyValue("--safe-right"));
+    this.safeBottom = parsePx(styles.getPropertyValue("--safe-bottom"));
+    this.safeLeft = parsePx(styles.getPropertyValue("--safe-left"));
+  }
+
+  createModePill() {
+    const { width, height } = this.scale;
+    const compact = height < 700;
+    const baseMargin = Math.max(10, Math.min(width, height) * 0.03);
+    const topOffset = (this.safeTop || 0) + baseMargin;
+    const w = Math.min(320, width * 0.72);
+    const h = 44;
+    const x = this.cx;
+    const y = topOffset + (compact ? 18 : 22);
+
+    const pillBg = this.add.rectangle(0, 0, w, h, 0x0b0f1a, 0.25).setOrigin(0.5);
+    const pillStroke = this.add.graphics();
+    pillStroke.lineStyle(2, 0x7dd3fc, 0.55);
+    pillStroke.strokeRoundedRect(-w / 2, -h / 2, w, h, h / 2);
+
+    const tabW = (w / 2) - 6;
+    const tabH = h - 8;
+    this.modePillWidth = w;
+    this.modePillHeight = h;
+    this.modeTabWidth = tabW;
+    this.modeTabHeight = tabH;
+    this.modeTab = this.add.rectangle(-w / 4, 0, tabW, tabH, 0x2a6bff, 0.25).setOrigin(0.5);
+
+    this.modeTabGlow = this.add.graphics();
+    this.modeTabGlow.fillStyle(0x2a6bff, 0.18);
+    this.modeTabGlow.fillRoundedRect(-tabW / 2, -tabH / 2, tabW, tabH, tabH / 2);
+    this.modeTabGlow.x = -w / 4;
+
+    const modeGlowHex = "#" + this.activeParticleTint.toString(16).padStart(6, "0");
+    this.modeClassicGlow = this.add.text(-w / 4, 0, "CLASSIC", {
+      fontFamily: UI_FONT,
+      fontSize: "15px",
+      color: modeGlowHex
+    }).setOrigin(0.5).setAlpha(0.22).setScale(1.12).setBlendMode(Phaser.BlendModes.ADD);
+    this.modeClassicText = this.add.text(-w / 4, 0, "CLASSIC", {
+      fontFamily: UI_FONT,
+      fontSize: "15px",
+      color: "#ffffff"
+    }).setOrigin(0.5);
+
+    this.modeDailyGlow = this.add.text(w / 4, 0, "DAILY", {
+      fontFamily: UI_FONT,
+      fontSize: "15px",
+      color: modeGlowHex
+    }).setOrigin(0.5).setAlpha(0.18).setScale(1.1).setBlendMode(Phaser.BlendModes.ADD);
+    this.modeDailyText = this.add.text(w / 4, 0, "DAILY", {
+      fontFamily: UI_FONT,
+      fontSize: "15px",
+      color: "#7f8db8"
+    }).setOrigin(0.5);
+
+    this.modePill = this.add.container(x, y, [
+      pillBg,
+      this.modeTabGlow,
+      this.modeTab,
+      pillStroke,
+      this.modeClassicGlow,
+      this.modeClassicText,
+      this.modeDailyGlow,
+      this.modeDailyText
+    ]).setDepth(12);
+
+    const hit = new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h);
+    this.modePill.setSize(w, h);
+
+    this.modeClassicHit = this.add.rectangle(-w / 4, 0, tabW, tabH, 0x000000, 0.001)
+      .setOrigin(0.5)
+      .setInteractive();
+    this.modeClassicHit.isUiElement = true;
+    this.modeClassicHit.on("pointerdown", () => {
+      if (this.adPlaying || this.isShowingInterstitial) return;
+      this.setMode("classic");
+    });
+
+    this.modeDailyHit = this.add.rectangle(w / 4, 0, tabW, tabH, 0x000000, 0.001)
+      .setOrigin(0.5)
+      .setInteractive();
+    this.modeDailyHit.isUiElement = true;
+    this.modeDailyHit.on("pointerdown", () => {
+      if (this.adPlaying || this.isShowingInterstitial) return;
+      this.setMode("daily");
+    });
+
+    this.modePill.add([this.modeClassicHit, this.modeDailyHit]);
+
+    this.updateModePillUI(true);
+  }
+
+  updateModePillUI(instant = false) {
+    if (!this.modePill || !this.modeTab) return;
+    const isClassic = this.mode === "classic";
+    const w = this.modePillWidth || this.modePill.list[0].width;
+    const targetX = isClassic ? -w / 4 : w / 4;
+
+    this.tweens.add({
+      targets: [this.modeTab, this.modeTabGlow],
+      x: targetX,
+      duration: instant ? 0 : 180,
+      ease: "Cubic.Out"
+    });
+
+    if (this.modeClassicText && this.modeDailyText) {
+      this.modeClassicText.setColor(isClassic ? "#ffffff" : "#7f8db8");
+      this.modeDailyText.setColor(isClassic ? "#7f8db8" : "#ffffff");
+      this.modeClassicText.setScale(isClassic ? 1.06 : 1.0);
+      this.modeDailyText.setScale(isClassic ? 1.0 : 1.06);
+    }
+    if (this.enableExtraGlow && this.modeClassicGlow && this.modeDailyGlow) {
+      this.modeClassicGlow.setAlpha(isClassic ? 0.28 : 0.16);
+      this.modeDailyGlow.setAlpha(isClassic ? 0.16 : 0.28);
+      this.modeClassicGlow.setScale(isClassic ? 1.14 : 1.1);
+      this.modeDailyGlow.setScale(isClassic ? 1.1 : 1.14);
+    }
+
+    if (this.modeTabGlow && this.modeTabWidth && this.modeTabHeight) {
+      this.modeTabGlow.clear();
+      this.modeTabGlow.fillStyle(0x2a6bff, 0.18);
+      this.modeTabGlow.fillRoundedRect(-this.modeTabWidth / 2, -this.modeTabHeight / 2, this.modeTabWidth, this.modeTabHeight, this.modeTabHeight / 2);
+    }
+  }
+
+  layoutHud() {
+    const { width, height } = this.scale;
+    const baseMargin = this.layoutBaseMargin ?? Math.max(10, Math.min(width, height) * 0.03);
+    const topOffset = this.layoutTopOffset ?? ((this.safeTop || 0) + baseMargin);
+    const rightOffset = (this.safeRight || 0) + baseMargin;
+    const compact = this.layoutCompact ?? (height < 700);
+
+    if (this.centerScoreText && this.centerBestText) {
+      this.centerScoreText.setX(this.cx);
+      this.centerScoreText.setY(this.cy);
+      this.centerBestText.setX(this.cx);
+      this.centerBestText.setY(this.cy + this.r * 0.48);
+      if (this.centerScoreGlow) {
+        this.centerScoreGlow.setX(this.cx);
+        this.centerScoreGlow.setY(this.cy);
+      }
+      if (this.centerBestGlow) {
+        this.centerBestGlow.setX(this.cx);
+        this.centerBestGlow.setY(this.cy + this.r * 0.48);
+      }
+
+      const scoreSize = Math.max(44, Math.floor(this.r * 0.72));
+      const bestSize = Math.max(12, Math.floor(this.r * 0.18));
+      this.centerScoreText.setFontSize(scoreSize + "px");
+      this.centerBestText.setFontSize(bestSize + "px");
+      if (this.centerScoreGlow) this.centerScoreGlow.setFontSize(scoreSize + "px");
+      if (this.centerBestGlow) this.centerBestGlow.setFontSize(bestSize + "px");
+    }
+
+    if (this.modePill) {
+      this.modePill.setX(this.cx);
+      this.modePill.setY(this.layoutModePillY ?? (topOffset + (compact ? 18 : 22)));
+    }
+
+    if (this.attemptsText) {
+      const attemptsSize = Math.max(13, Math.floor(Math.min(width, height) * 0.026));
+      this.attemptsText.setFontSize(attemptsSize + "px");
+      const attemptsY = this.modePill ? this.modePill.y + (compact ? 28 : 34) : topOffset + 64;
+      this.attemptsText.setX(this.cx);
+      this.attemptsText.setY(attemptsY);
+    }
+    if (this.attemptsGlow) {
+      const attemptsSize = Math.max(13, Math.floor(Math.min(width, height) * 0.026));
+      this.attemptsGlow.setFontSize(attemptsSize + "px");
+      const attemptsY = this.modePill ? this.modePill.y + (compact ? 28 : 34) : topOffset + 64;
+      this.attemptsGlow.setX(this.cx);
+      this.attemptsGlow.setY(attemptsY);
+    }
+
+    if (this.skinNameText) {
+      const nameSize = Math.max(12, Math.floor(this.r * 0.16));
+      this.skinNameText.setFontSize(nameSize + "px");
+      this.skinNameText.setX(this.cx);
+      this.skinNameText.setY(this.cy + this.r * 0.68);
+    }
+
+    if (this.hintText) {
+      const hintSize = this.layoutHintSize ?? Math.floor(Math.min(width, height) * 0.03);
+      this.hintText.setFontSize(hintSize + "px");
+      this.hintText.setX(this.cx);
+      this.hintText.setY(this.layoutHintY ?? (this.cy + this.r * (compact ? 1.35 : 1.55)));
+      if (this.hintGlow) {
+        this.hintGlow.setFontSize(hintSize + "px");
+        this.hintGlow.setX(this.cx);
+        this.hintGlow.setY(this.layoutHintY ?? (this.cy + this.r * (compact ? 1.35 : 1.55)));
+      }
+    }
+
+    if (this.settingsButton) {
+      this.settingsButton.setX(width - rightOffset);
+      this.settingsButton.setY(topOffset + this.settingsButton.height * 0.5);
+    }
+    if (this.settingsGlow) {
+      this.settingsGlow.setX(width - rightOffset);
+      this.settingsGlow.setY(topOffset + this.settingsGlow.height * 0.5);
+    }
+  }
+
+  fitImageToScreen(img) {
+    const sw = this.scale.width;
+    const sh = this.scale.height;
+    const iw = img.width;
+    const ih = img.height;
+    const scale = Math.max(sw / iw, sh / ih);
+    img.setScale(scale);
+    img.setPosition(sw / 2, sh / 2);
+  }
+
+  updateLayoutMetrics() {
+    const { width, height } = this.scale;
+    const baseMargin = Math.max(10, Math.min(width, height) * 0.03);
+    const topOffset = (this.safeTop || 0) + baseMargin;
+    const bottomOffset = (this.safeBottom || 0) + baseMargin;
+    const compact = height < 700;
+    const modePillHeight = 44;
+    const modePillY = topOffset + (compact ? 18 : 22);
+    const modePillBottom = modePillY + modePillHeight / 2;
+    const ringTopGap = compact ? 12 : 18;
+    const hintRatio = compact ? 1.32 : 1.55;
+    const hintSize = Math.max(12, Math.floor(Math.min(width, height) * 0.03));
+    const hintBottomPad = bottomOffset + hintSize * 0.6;
+
+    this.cx = width / 2;
+    this.cy = height / 2;
+
+    const maxRFromTop = this.cy - (modePillBottom + ringTopGap);
+    const maxRFromHint = (height - hintBottomPad - this.cy) / hintRatio;
+    const targetR = Math.min(width, height) * 0.28;
+    let r = Math.min(targetR, maxRFromTop, maxRFromHint);
+    if (!Number.isFinite(r)) r = targetR;
+    r = Math.max(32, r);
+
+    this.r = r;
+    this.rMarker = this.r * 0.06;
+    this.layoutCompact = compact;
+    this.layoutBaseMargin = baseMargin;
+    this.layoutTopOffset = topOffset;
+    this.layoutBottomOffset = bottomOffset;
+    this.layoutModePillY = modePillY;
+    this.layoutHintY = this.cy + this.r * hintRatio;
+    this.layoutHintSize = hintSize;
+  }
+
+  createGlowTextures() {
+    this.createRadialTexture(this.ringGlowTextureKey, 256, [
+      { stop: 0, alpha: 0.9 },
+      { stop: 0.45, alpha: 0.25 },
+      { stop: 1, alpha: 0 }
+    ]);
+    this.createRadialTexture(this.flashGlowTextureKey, 512, [
+      { stop: 0, alpha: 1 },
+      { stop: 0.35, alpha: 0.5 },
+      { stop: 1, alpha: 0 }
+    ]);
+  }
+
+  createRadialTexture(key, size, stops) {
+    if (this.textures.exists(key)) return;
+    const tex = this.textures.createCanvas(key, size, size);
+    const ctx = tex.getContext();
+    const cx = size * 0.5;
+    const cy = size * 0.5;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.5);
+    stops.forEach((stop) => {
+      grad.addColorStop(stop.stop, `rgba(255, 255, 255, ${stop.alpha})`);
+    });
+    ctx.clearRect(0, 0, size, size);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    tex.refresh();
+  }
+
+  drawRingLayers() {
+    if (!this.gRingGlow || !this.gRingCore || !this.gZone) return;
+
+    const glow = this.gRingGlow;
+    const core = this.gRingCore;
+    const zone = this.gZone;
+    glow.clear();
+    core.clear();
+    zone.clear();
+
+    const t = Math.min(1, this.score / 25);
+    const ringColor = this.lerpColorInt(this.baseRingColor, this.hotRingColor, t);
+    const glowColor = this.lerpColorInt(this.activeGlowStart, this.activeGlowEnd, t);
+    const coreColor = this.lerpColorInt(ringColor, glowColor, 0.45);
+    const shimmer = this.activeSkinIsPrestige ? (0.04 + 0.05 * Math.sin(this.time.now * 0.002)) : 0;
+
+    const coreThickness = Math.max(6, this.r * 0.085);
+    const glowThickness = Math.max(12, coreThickness * 1.7);
+    const outerThickness = Math.max(16, coreThickness * 2.9);
+    const innerThickness = Math.max(3, coreThickness * 0.45);
+
+    const outerAlpha = Phaser.Math.Clamp(0.1 + this.ringPulse * 0.04 + shimmer, 0.08, 0.15);
+    const glowAlpha = Phaser.Math.Clamp(0.3 + this.ringPulse * 0.1 + shimmer, 0.25, 0.4);
+    const coreAlpha = Phaser.Math.Clamp(0.9 + shimmer, 0.85, 1.0);
+    const innerAlpha = Phaser.Math.Clamp(0.06 + this.ringPulse * 0.03 + shimmer * 0.5, 0.05, 0.1);
+
+    // Layer A - Outer bloom
+    glow.lineStyle(outerThickness, glowColor, outerAlpha);
+    glow.strokeCircle(this.cx, this.cy, this.r);
+    // Layer B - Glow ring
+    glow.lineStyle(glowThickness, glowColor, glowAlpha);
+    glow.strokeCircle(this.cx, this.cy, this.r);
+    // Layer C - Core ring
+    core.lineStyle(coreThickness, coreColor, coreAlpha);
+    core.strokeCircle(this.cx, this.cy, this.r);
+    // Layer D - Inner glow
+    glow.lineStyle(innerThickness, glowColor, innerAlpha);
+    glow.strokeCircle(this.cx, this.cy, this.r);
+
+    // Zone arc (glowing + hot)
+    const half = this.zoneSize / 2;
+    const start = this.normAngle(this.zoneCenter - half);
+    const end = this.normAngle(this.zoneCenter + half);
+    const distToCenter = this.circularDistance(this.angle, this.zoneCenter);
+    const approach = Phaser.Math.Clamp(1 - distToCenter / (this.zoneSize * 1.2), 0, 1);
+
+    const zoneOuterThickness = coreThickness * 2.8;
+    const zoneCoreThickness = coreThickness * 1.8;
+    const zoneInnerThickness = Math.max(3, coreThickness * 0.65);
+    const zoneOuterAlpha = Phaser.Math.Clamp(0.45 + approach * 0.45, 0.45, 0.9);
+    const zoneCoreAlpha = Phaser.Math.Clamp(0.9 + approach * 0.1, 0.9, 1);
+    const zoneInnerAlpha = Phaser.Math.Clamp(0.08 + approach * 0.14, 0.08, 0.22);
+    const zoneHotColor = this.lerpColorInt(this.activeZoneOuter, 0xffffff, 0.3 + approach * 0.45);
+
+    const drawZoneArc = (thickness, color, alpha) => {
+      zone.lineStyle(thickness, color, alpha);
+      zone.beginPath();
+      if (start <= end) {
+        zone.arc(this.cx, this.cy, this.r, start, end, false);
+        zone.strokePath();
+      } else {
+        zone.arc(this.cx, this.cy, this.r, start, Math.PI * 2, false);
+        zone.strokePath();
+        zone.beginPath();
+        zone.arc(this.cx, this.cy, this.r, 0, end, false);
+        zone.strokePath();
+      }
+    };
+
+    // Outer hot bloom (thicker than core ring)
+    drawZoneArc(zoneOuterThickness, zoneHotColor, zoneOuterAlpha);
+    // Core danger band (brightest)
+    drawZoneArc(zoneCoreThickness, this.activeZoneCore, zoneCoreAlpha);
+    // Inner flicker glow
+    drawZoneArc(zoneInnerThickness, zoneHotColor, zoneInnerAlpha);
+  }
+
+  loadSkinState() {
+    const saved = localStorage.getItem("taplock_unlocked_skins");
+    let unlocked = [];
+    try {
+      unlocked = saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      unlocked = [];
+    }
+    if (!Array.isArray(unlocked)) unlocked = [];
+    if (!unlocked.includes("default")) unlocked.unshift("default");
+    this.unlockedSkins = unlocked;
+    localStorage.setItem("taplock_unlocked_skins", JSON.stringify(this.unlockedSkins));
+
+    const active = localStorage.getItem("taplock_active_skin");
+    if (active && this.unlockedSkins.includes(active)) this.activeSkinId = active;
+    else {
+      this.activeSkinId = "default";
+      localStorage.setItem("taplock_active_skin", this.activeSkinId);
+    }
+  }
+
+  getSkinById(id) {
+    return SKINS.find((s) => s.id === id) || SKINS[0];
+  }
+
+  safeSetTextColor(textObj, color) {
+    if (!textObj || !textObj.scene || !textObj.texture || !textObj.frame) return;
+    if (typeof textObj.setColor !== "function") return;
+    textObj.setColor(color);
+  }
+
+  safeSetFillStyle(shapeObj, color, alpha = 1) {
+    if (!shapeObj || !shapeObj.scene || typeof shapeObj.setFillStyle !== "function") return;
+    shapeObj.setFillStyle(color, alpha);
+  }
+
+  setEmitterTint(emitterOrManager, tint) {
+    if (!emitterOrManager) return;
+    if (typeof emitterOrManager.setTint === "function") {
+      emitterOrManager.setTint(tint);
+      return;
+    }
+    if (emitterOrManager.emitters && emitterOrManager.emitters.list) {
+      emitterOrManager.emitters.list.forEach((emitter) => {
+        if (emitter && typeof emitter.setTint === "function") {
+          emitter.setTint(tint);
+        }
+      });
+    }
+  }
+
+  applySkinById(id, silent = false) {
+    if (!this.unlockedSkins.includes(id)) return;
+    this.activeSkinId = id;
+    localStorage.setItem("taplock_active_skin", id);
+    const skin = this.getSkinById(id);
+    this.baseRingColor = skin.colors.ring;
+    this.hotRingColor = RING_HOT[skin.id] || skin.colors.ring;
+    this.activeGlowStart = skin.colors.glow;
+    this.activeGlowEnd = GLOW_END[skin.id] || skin.colors.glow;
+    this.activeZoneOuter = skin.colors.zone;
+    this.activeZoneCore = 0xffffff;
+    this.activeParticleTint = skin.colors.zone;
+    this.activeSkinIsPrestige = !!skin.prestige;
+    const glowHex = "#" + this.activeParticleTint.toString(16).padStart(6, "0");
+    this.setEmitterTint(this.hitEmitter, this.activeParticleTint);
+    this.setEmitterTint(this.perfectEmitter, this.activeParticleTint);
+    this.setEmitterTint(this.missEmitter, this.activeParticleTint);
+    this.setEmitterTint(this.missRingEmitter, this.activeParticleTint);
+    this.setEmitterTint(this.perfectRayEmitter, this.activeParticleTint);
+    if (this.enableExtraGlow) {
+      this.safeSetTextColor(this.centerScoreGlow, glowHex);
+      this.safeSetTextColor(this.centerBestGlow, glowHex);
+      this.safeSetTextColor(this.hintGlow, glowHex);
+      this.safeSetTextColor(this.attemptsGlow, glowHex);
+      this.safeSetTextColor(this.settingsGlow, glowHex);
+      this.safeSetTextColor(this.settingsTitleGlow, glowHex);
+      this.safeSetFillStyle(this.settingsPanelGlow, this.activeParticleTint, 0.12);
+      if (this.soundToggle) {
+        this.safeSetTextColor(this.soundToggle.labelGlow, glowHex);
+        this.safeSetTextColor(this.soundToggle.valueGlow, this.soundEnabled ? "#86efac" : "#9aa7c7");
+      }
+      if (this.hapticsToggle) {
+        this.safeSetTextColor(this.hapticsToggle.labelGlow, glowHex);
+        this.safeSetTextColor(this.hapticsToggle.valueGlow, this.hapticsEnabled ? "#86efac" : "#9aa7c7");
+      }
+      this.safeSetTextColor(this.overTitleGlow, glowHex);
+      this.safeSetTextColor(this.overScoreGlow, glowHex);
+      this.safeSetTextColor(this.overBestGlow, glowHex);
+      this.safeSetTextColor(this.overCTAGlow, glowHex);
+      this.safeSetTextColor(this.modeClassicGlow, glowHex);
+      this.safeSetTextColor(this.modeDailyGlow, glowHex);
+      if (this.retryButton && this.retryButton.glow) this.safeSetTextColor(this.retryButton.glow, glowHex);
+      if (this.continueButton && this.continueButton.glow) this.safeSetTextColor(this.continueButton.glow, glowHex);
+      if (this.extraAttemptButton && this.extraAttemptButton.glow) this.safeSetTextColor(this.extraAttemptButton.glow, glowHex);
+      if (this.shareButton && this.shareButton.glow) this.safeSetTextColor(this.shareButton.glow, glowHex);
+    }
+    if (this.ringAura) this.ringAura.setTint(this.activeGlowStart);
+    if (this.ringHalo) this.ringHalo.setTint(this.activeGlowEnd);
+    if (this.flashSprite) this.flashSprite.setTint(this.activeGlowEnd);
+    if (this.bgImgBloom) this.bgImgBloom.setTint(this.activeGlowStart);
+    if (this.bgImgFar) this.bgImgFar.setTint(this.activeGlowEnd);
+    if (this.screenFlash) this.screenFlash.setFillStyle(this.activeGlowEnd, 1);
+    if (!silent) {
+      this.cameras.main.flash(60, 200, 220, 255);
+      this.spawnHitBurst(this.cx, this.cy);
+      this.playTapSfx();
+      this.vibrate(5);
+      this.showSkinToast(skin.name);
+    }
+  }
+
+  cycleSkin() {
+    if (this.unlockedSkins.length <= 1) return;
+    const idx = this.unlockedSkins.indexOf(this.activeSkinId);
+    const nextId = this.unlockedSkins[(idx + 1) % this.unlockedSkins.length];
+    this.applySkinById(nextId);
+  }
+
+  showSkinToast(name) {
+    if (!this.skinNameText) return;
+    this.skinNameText.setText(name);
+    this.skinNameText.setAlpha(1);
+    this.tweens.add({
+      targets: this.skinNameText,
+      alpha: 0,
+      duration: 900,
+      ease: "Cubic.Out"
+    });
+  }
+
+  checkSkinUnlocks() {
+    const score = this.best;
+    for (const skin of SKINS) {
+      if (skin.unlockScore > 0 && score >= skin.unlockScore) {
+        this.unlockSkin(skin.id);
+      }
+    }
+  }
+
+  unlockSkin(id) {
+    if (this.unlockedSkins.includes(id)) return false;
+    this.unlockedSkins.push(id);
+    localStorage.setItem("taplock_unlocked_skins", JSON.stringify(this.unlockedSkins));
+    const skin = this.getSkinById(id);
+    this.applySkinById(id, true);
+    this.cameras.main.flash(120, 255, 245, 210);
+    this.spawnPerfectBurst(this.cx, this.cy);
+    if (this.perfectRayEmitter) this.perfectRayEmitter.emitParticleAt(this.cx, this.cy, 16);
+    this.playPerfectSfx();
+    this.vibrate([8, 30, 8]);
+    this.showUnlockToast(skin.name);
+    return true;
+  }
+
+  showUnlockToast(name) {
+    const title = this.add.text(this.cx, this.cy - this.r * 0.55, "NEW RING UNLOCKED", {
+      fontFamily: UI_FONT,
+      fontSize: Math.floor(this.r * 0.18) + "px",
+      color: "#ffffff"
+    }).setOrigin(0.5).setDepth(25);
+
+    const subtitle = this.add.text(this.cx, this.cy - this.r * 0.42, name, {
+      fontFamily: UI_FONT,
+      fontSize: Math.floor(this.r * 0.16) + "px",
+      color: "#cfe2ff"
+    }).setOrigin(0.5).setDepth(25);
+
+    this.tweens.add({
+      targets: [title, subtitle],
+      alpha: 0,
+      y: "-=12",
+      duration: 900,
+      ease: "Cubic.Out",
+      onComplete: () => {
+        title.destroy();
+        subtitle.destroy();
+      }
+    });
+  }
+
+  lerpColorInt(c1, c2, t) {
+    const r1 = (c1 >> 16) & 0xff;
+    const g1 = (c1 >> 8) & 0xff;
+    const b1 = c1 & 0xff;
+    const r2 = (c2 >> 16) & 0xff;
+    const g2 = (c2 >> 8) & 0xff;
+    const b2 = c2 & 0xff;
+    const r = Math.round(r1 + (r2 - r1) * t);
+    const g = Math.round(g1 + (g2 - g1) * t);
+    const b = Math.round(b1 + (b2 - b1) * t);
+    return (r << 16) | (g << 8) | b;
+  }
+
   getTodayKey() {
     const d = new Date();
     const y = d.getFullYear();
@@ -388,33 +1171,84 @@ class TapLockScene extends Phaser.Scene {
     return changed;
   }
 
-  updateBestText() {
-    if (this.mode === "daily") {
-      this.bestText.setText(`DAILY BEST ${this.dailyBest}`);
-    } else {
-      this.bestText.setText(`BEST ${this.best}`);
+  pulseGlow(glowText, peakAlpha = 0.4, floorAlpha = 0.18, duration = 240) {
+    if (!glowText) return;
+    if (!this.enableExtraGlow) {
+      glowText.setAlpha(0);
+      glowText.setVisible(false);
+      return;
     }
+    glowText.setAlpha(peakAlpha);
+    this.tweens.add({
+      targets: glowText,
+      alpha: floorAlpha,
+      duration,
+      ease: "Quad.Out"
+    });
   }
 
-  updateModeUI() {
-    const classicActive = this.mode === "classic";
-    if (this.modeClassicText) {
-      this.modeClassicText.setColor(classicActive ? "#ffffff" : "#6f7aa6");
-      this.modeClassicText.setAlpha(classicActive ? 1 : 0.8);
+  applyGlowPreference() {
+    const show = !!this.enableExtraGlow;
+    const toggle = (obj) => {
+      if (!obj) return;
+      obj.setVisible(show);
+      if (!show) obj.setAlpha(0);
+    };
+
+    toggle(this.ringAura);
+    toggle(this.ringHalo);
+    toggle(this.centerScoreGlow);
+    toggle(this.centerBestGlow);
+    toggle(this.hintGlow);
+    toggle(this.attemptsGlow);
+    toggle(this.overTitleGlow);
+    toggle(this.overScoreGlow);
+    toggle(this.overBestGlow);
+    toggle(this.overCTAGlow);
+    toggle(this.settingsGlow);
+    toggle(this.settingsTitleGlow);
+    toggle(this.settingsPanelGlow);
+    toggle(this.modeClassicGlow);
+    toggle(this.modeDailyGlow);
+    if (this.retryButton && this.retryButton.glow) toggle(this.retryButton.glow);
+    if (this.continueButton && this.continueButton.glow) toggle(this.continueButton.glow);
+    if (this.extraAttemptButton && this.extraAttemptButton.glow) toggle(this.extraAttemptButton.glow);
+    if (this.shareButton && this.shareButton.glow) toggle(this.shareButton.glow);
+    if (this.soundToggle && this.soundToggle.labelGlow) toggle(this.soundToggle.labelGlow);
+    if (this.soundToggle && this.soundToggle.valueGlow) toggle(this.soundToggle.valueGlow);
+    if (this.hapticsToggle && this.hapticsToggle.labelGlow) toggle(this.hapticsToggle.labelGlow);
+    if (this.hapticsToggle && this.hapticsToggle.valueGlow) toggle(this.hapticsToggle.valueGlow);
+  }
+
+  updateBestText() {
+    if (this.mode === "daily") {
+      if (this.centerBestText) this.centerBestText.setText(`DAILY BEST ${this.dailyBest}`);
+      if (this.centerBestGlow) this.centerBestGlow.setText(`DAILY BEST ${this.dailyBest}`);
+    } else {
+      if (this.centerBestText) this.centerBestText.setText(`BEST ${this.best}`);
+      if (this.centerBestGlow) this.centerBestGlow.setText(`BEST ${this.best}`);
     }
-    if (this.modeDailyText) {
-      this.modeDailyText.setColor(classicActive ? "#6f7aa6" : "#ffffff");
-      this.modeDailyText.setAlpha(classicActive ? 0.8 : 1);
-    }
+    this.pulseGlow(this.centerBestGlow, 0.34, 0.2, 260);
+  }
+
+  updateModeUI(instant = false) {
+    this.updateModePillUI(instant);
   }
 
   updateAttemptsText() {
     if (!this.attemptsText) return;
     if (this.mode === "daily") {
-      this.attemptsText.setText(`ATTEMPTS: ${this.dailyAttemptsUsed} / ${GAME.dailyMaxAttempts}`);
+      const text = `ATTEMPTS: ${this.dailyAttemptsUsed} / ${GAME.dailyMaxAttempts}`;
+      this.attemptsText.setText(text);
       this.attemptsText.setVisible(true);
+      if (this.attemptsGlow) {
+        this.attemptsGlow.setText(text);
+        this.attemptsGlow.setVisible(true);
+        this.pulseGlow(this.attemptsGlow, 0.3, 0.16, 260);
+      }
     } else {
       this.attemptsText.setVisible(false);
+      if (this.attemptsGlow) this.attemptsGlow.setVisible(false);
     }
   }
 
@@ -449,8 +1283,10 @@ class TapLockScene extends Phaser.Scene {
     }
     this.dailyLockSub.setText(`Next Daily in ${this.getTimeUntilMidnightText()}`);
     this.dailyLockOverlay.setVisible(true);
+    this.updateSettingsButtonState();
     this.dailyLockTimeoutId = setTimeout(() => {
       if (this.dailyLockOverlay) this.dailyLockOverlay.setVisible(false);
+      this.updateSettingsButtonState();
       this.dailyLockTimeoutId = null;
     }, 1500);
   }
@@ -484,9 +1320,16 @@ class TapLockScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const margin = Math.max(16, Math.min(width, height) * 0.04);
     const gearSize = Math.floor(Math.min(width, height) * 0.05) + "px";
+    const glowHex = "#" + this.activeParticleTint.toString(16).padStart(6, "0");
+
+    this.settingsGlow = this.add.text(width - margin, margin, "SET", {
+      fontFamily: UI_FONT,
+      fontSize: gearSize,
+      color: glowHex
+    }).setOrigin(0.5).setDepth(11).setAlpha(0.26).setScale(1.15).setBlendMode(Phaser.BlendModes.ADD);
 
     this.settingsButton = this.add.text(width - margin, margin, "SET", {
-      fontFamily: "Arial, system-ui, -apple-system",
+      fontFamily: UI_FONT,
       fontSize: gearSize,
       color: "#9aa7c7"
     }).setOrigin(0.5).setDepth(12);
@@ -498,15 +1341,18 @@ class TapLockScene extends Phaser.Scene {
       this.settingsButton.width + pad * 2,
       this.settingsButton.height + pad * 2
     );
+    this.settingsHitArea = hitArea;
     this.settingsButton.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
     this.settingsButton.isUiElement = true;
     this.settingsButton.on("pointerover", () => {
       this.input.setDefaultCursor("pointer");
       this.settingsButton.setColor("#ffffff");
+      if (this.enableExtraGlow && this.settingsGlow) this.settingsGlow.setAlpha(0.36);
     });
     this.settingsButton.on("pointerout", () => {
       this.input.setDefaultCursor("default");
       this.settingsButton.setColor("#9aa7c7");
+      if (this.enableExtraGlow && this.settingsGlow) this.settingsGlow.setAlpha(0.26);
     });
     this.settingsButton.on("pointerdown", () => {
       if (this.adPlaying || this.isShowingInterstitial) return;
@@ -524,14 +1370,21 @@ class TapLockScene extends Phaser.Scene {
 
     this.settingsPanel = this.add.container(panelX, panelY).setVisible(false).setDepth(14);
 
+    this.settingsPanelGlow = this.add.rectangle(0, 0, panelW * 1.04, panelH * 1.08, this.activeParticleTint, 0.12)
+      .setBlendMode(Phaser.BlendModes.ADD);
     const panelBg = this.add.rectangle(0, 0, panelW, panelH, 0x111a2e, 0.96)
       .setStrokeStyle(2, 0x2a3a6a, 1);
     panelBg.setInteractive(new Phaser.Geom.Rectangle(-panelW / 2, -panelH / 2, panelW, panelH), Phaser.Geom.Rectangle.Contains);
     panelBg.isUiElement = true;
     panelBg.on("pointerdown", () => {});
 
+    this.settingsTitleGlow = this.add.text(0, -panelH * 0.35, "SETTINGS", {
+      fontFamily: UI_FONT,
+      fontSize: Math.floor(Math.min(width, height) * 0.03) + "px",
+      color: glowHex
+    }).setOrigin(0.5).setAlpha(0.24).setScale(1.1).setBlendMode(Phaser.BlendModes.ADD);
     const title = this.add.text(0, -panelH * 0.35, "SETTINGS", {
-      fontFamily: "Arial, system-ui, -apple-system",
+      fontFamily: UI_FONT,
       fontSize: Math.floor(Math.min(width, height) * 0.03) + "px",
       color: "#cfe2ff"
     }).setOrigin(0.5);
@@ -558,13 +1411,19 @@ class TapLockScene extends Phaser.Scene {
     });
 
     this.settingsPanel.add([
+      this.settingsPanelGlow,
       panelBg,
+      this.settingsTitleGlow,
       title,
       this.soundToggle.bg,
+      this.soundToggle.labelGlow,
       this.soundToggle.labelText,
+      this.soundToggle.valueGlow,
       this.soundToggle.valueText,
       this.hapticsToggle.bg,
+      this.hapticsToggle.labelGlow,
       this.hapticsToggle.labelText,
+      this.hapticsToggle.valueGlow,
       this.hapticsToggle.valueText
     ]);
   }
@@ -574,28 +1433,45 @@ class TapLockScene extends Phaser.Scene {
     const baseFill = 0x1b2740;
     const hoverFill = 0x24365c;
     const fontSize = Math.floor(rowH * 0.42) + "px";
+    const glowHex = "#" + this.activeParticleTint.toString(16).padStart(6, "0");
 
     const bg = this.add.rectangle(0, centerY, rowW, rowH, baseFill, 1)
       .setStrokeStyle(1, 0x2a3a6a, 1);
     bg.setInteractive(new Phaser.Geom.Rectangle(-rowW / 2, -rowH / 2, rowW, rowH), Phaser.Geom.Rectangle.Contains);
     bg.isUiElement = true;
+
+    const labelGlow = this.add.text(-rowW / 2 + rowH * 0.4, centerY, label, {
+      fontFamily: UI_FONT,
+      fontSize,
+      color: glowHex
+    }).setOrigin(0, 0.5).setAlpha(0.22).setScale(1.08).setBlendMode(Phaser.BlendModes.ADD);
+    const valueGlow = this.add.text(rowW / 2 - rowH * 0.4, centerY, "ON", {
+      fontFamily: UI_FONT,
+      fontSize,
+      color: "#86efac"
+    }).setOrigin(1, 0.5).setAlpha(0.22).setScale(1.08).setBlendMode(Phaser.BlendModes.ADD);
+
     bg.on("pointerover", () => {
       this.input.setDefaultCursor("pointer");
       bg.setFillStyle(hoverFill, 1);
+      if (this.enableExtraGlow && labelGlow) labelGlow.setAlpha(0.32);
+      if (this.enableExtraGlow && valueGlow) valueGlow.setAlpha(0.32);
     });
     bg.on("pointerout", () => {
       this.input.setDefaultCursor("default");
       bg.setFillStyle(baseFill, 1);
+      if (this.enableExtraGlow && labelGlow) labelGlow.setAlpha(0.22);
+      if (this.enableExtraGlow && valueGlow) valueGlow.setAlpha(0.22);
     });
 
     const labelText = this.add.text(-rowW / 2 + rowH * 0.4, centerY, label, {
-      fontFamily: "Arial, system-ui, -apple-system",
+      fontFamily: UI_FONT,
       fontSize,
       color: "#cfe2ff"
     }).setOrigin(0, 0.5);
 
     const valueText = this.add.text(rowW / 2 - rowH * 0.4, centerY, "ON", {
-      fontFamily: "Arial, system-ui, -apple-system",
+      fontFamily: UI_FONT,
       fontSize,
       color: "#86efac"
     }).setOrigin(1, 0.5);
@@ -603,9 +1479,11 @@ class TapLockScene extends Phaser.Scene {
     const setValue = (on) => {
       valueText.setText(on ? "ON" : "OFF");
       valueText.setColor(on ? "#86efac" : "#9aa7c7");
+      valueGlow.setText(on ? "ON" : "OFF");
+      valueGlow.setColor(on ? "#86efac" : "#9aa7c7");
     };
 
-    return { bg, labelText, valueText, setValue };
+    return { bg, labelText, labelGlow, valueText, valueGlow, setValue };
   }
 
   toggleSettingsPanel() {
@@ -628,6 +1506,27 @@ class TapLockScene extends Phaser.Scene {
     if (this.settingsDim) this.settingsDim.setVisible(false);
     if (this.settingsPanel) this.settingsPanel.setVisible(false);
     this.input.setDefaultCursor("default");
+  }
+
+  updateSettingsButtonState() {
+    if (!this.settingsButton) return;
+    const blocked = this.state === "dead" ||
+      (this.overGroup && this.overGroup.visible) ||
+      this.adPlaying ||
+      this.isShowingInterstitial ||
+      (this.dailyLockOverlay && this.dailyLockOverlay.visible);
+    if (blocked) {
+      this.hideSettingsPanel();
+      this.settingsButton.disableInteractive();
+      this.settingsButton.setVisible(false);
+      if (this.settingsGlow) this.settingsGlow.setVisible(false);
+    } else {
+      this.settingsButton.setVisible(true);
+      if (this.settingsGlow) this.settingsGlow.setVisible(true);
+      if (this.settingsHitArea) {
+        this.settingsButton.setInteractive(this.settingsHitArea, Phaser.Geom.Rectangle.Contains);
+      }
+    }
   }
 
   unlockAudioOnce() {
@@ -748,18 +1647,24 @@ class TapLockScene extends Phaser.Scene {
     const hoverFill = 0x24365c;
     const border = 0x2a3a6a;
     const fontSize = Math.floor(height * 0.42) + "px";
+    const glowHex = "#" + this.activeParticleTint.toString(16).padStart(6, "0");
 
     const container = this.add.container(0, 0);
     const bg = this.add.rectangle(0, 0, width, height, baseFill, 1)
       .setStrokeStyle(2, border, 1);
+    const glow = this.add.text(0, 0, label, {
+      fontFamily: UI_FONT,
+      fontSize,
+      color: glowHex
+    }).setOrigin(0.5).setAlpha(0.22).setScale(1.12).setBlendMode(Phaser.BlendModes.ADD);
     const text = this.add.text(0, 0, label, {
-      fontFamily: "Arial, system-ui, -apple-system",
+      fontFamily: UI_FONT,
       fontSize,
       color: "#ffffff"
     }).setOrigin(0.5);
     text.isUiElement = true;
 
-    container.add([bg, text]);
+    container.add([bg, glow, text]);
 
     const hitArea = new Phaser.Geom.Rectangle(-width / 2, -height / 2, width, height);
     text.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
@@ -770,6 +1675,7 @@ class TapLockScene extends Phaser.Scene {
     const setEnabled = (value) => {
       enabled = value;
       text.setAlpha(enabled ? 1 : 0.45);
+      glow.setAlpha(enabled ? 0.22 : 0.08);
       bg.setAlpha(enabled ? 1 : 0.45);
       if (enabled) {
         text.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
@@ -782,6 +1688,7 @@ class TapLockScene extends Phaser.Scene {
 
     const setLabel = (nextLabel) => {
       text.setText(nextLabel);
+      glow.setText(nextLabel);
     };
 
     const onClick = (handler) => {
@@ -792,6 +1699,7 @@ class TapLockScene extends Phaser.Scene {
       if (!enabled) return;
       this.input.setDefaultCursor("pointer");
       bg.setFillStyle(hoverFill, 1);
+      if (this.enableExtraGlow) glow.setAlpha(0.32);
       container.setScale(1.03);
     });
 
@@ -799,6 +1707,7 @@ class TapLockScene extends Phaser.Scene {
       if (!enabled) return;
       this.input.setDefaultCursor("default");
       bg.setFillStyle(baseFill, 1);
+      if (this.enableExtraGlow) glow.setAlpha(0.22);
       container.setScale(1);
     });
 
@@ -813,7 +1722,7 @@ class TapLockScene extends Phaser.Scene {
       container.setScale(1.03);
     });
 
-    return { container, bg, text, setEnabled, setLabel, onClick };
+    return { container, bg, text, glow, setEnabled, setLabel, onClick };
   }
 
   updateContinueButton() {
@@ -870,7 +1779,9 @@ class TapLockScene extends Phaser.Scene {
     this.vibrate([12, 20, 12]);
     this.state = "playing";
     this.overGroup.setVisible(false);
+    this.updateSettingsButtonState();
     this.hintText.setVisible(false);
+    if (this.hintGlow) this.hintGlow.setVisible(false);
 
     this.speed = Math.max(this.speed * 0.85, GAME.baseSpeed);
     this.zoneSize = Math.min(this.zoneSize * 1.25, GAME.zoneStartSize);
@@ -886,6 +1797,7 @@ class TapLockScene extends Phaser.Scene {
     if (this.adPlaying || this.isShowingInterstitial) return Promise.resolve(false);
     this.adPlaying = true;
     this.hideSettingsPanel();
+    this.updateSettingsButtonState();
     if (this.retryButton) this.retryButton.setEnabled(false);
     if (this.continueButton) this.continueButton.setEnabled(false);
     if (this.extraAttemptButton) this.extraAttemptButton.setEnabled(false);
@@ -899,6 +1811,7 @@ class TapLockScene extends Phaser.Scene {
         this.time.delayedCall(400, () => {
           this.adOverlay.setVisible(false);
           this.adPlaying = false;
+          this.updateSettingsButtonState();
           resolve(true);
         });
       });
@@ -910,6 +1823,7 @@ class TapLockScene extends Phaser.Scene {
     this.isShowingInterstitial = true;
     this.adPlaying = true;
     this.hideSettingsPanel();
+    this.updateSettingsButtonState();
     if (this.retryButton) this.retryButton.setEnabled(false);
     if (this.continueButton) this.continueButton.setEnabled(false);
 
@@ -926,6 +1840,7 @@ class TapLockScene extends Phaser.Scene {
         this.adOverlay.setVisible(false);
         this.isShowingInterstitial = false;
         this.adPlaying = false;
+        this.updateSettingsButtonState();
         resolve(true);
       }, duration);
     });
@@ -937,9 +1852,17 @@ class TapLockScene extends Phaser.Scene {
     const dailyLocked = this.mode === "daily" && this.dailyAttemptsUsed >= GAME.dailyMaxAttempts;
     const bonusAvailable = dailyLocked && !this.dailyBonusUsed;
     this.overScore.setText(`Score: ${this.score}`);
+    if (this.overScoreGlow) this.overScoreGlow.setText(`Score: ${this.score}`);
     this.overBest.setText(`${bestLabel}: ${bestValue}`);
+    if (this.overBestGlow) this.overBestGlow.setText(`${bestLabel}: ${bestValue}`);
     this.overGroup.setVisible(true);
+    this.pulseGlow(this.overTitleGlow, 0.3, 0.18, 260);
+    this.pulseGlow(this.overScoreGlow, 0.28, 0.16, 240);
+    this.pulseGlow(this.overBestGlow, 0.28, 0.16, 240);
+    this.pulseGlow(this.overCTAGlow, 0.26, 0.14, 220);
+    this.updateSettingsButtonState();
     this.hintText.setVisible(false);
+    if (this.hintGlow) this.hintGlow.setVisible(false);
     if (this.adOverlay) this.adOverlay.setVisible(false);
     if (this.retryButton) this.retryButton.setEnabled(true);
     if (this.continueButton) {
@@ -1004,7 +1927,7 @@ class TapLockScene extends Phaser.Scene {
 
   showToast(message) {
     const toast = this.add.text(this.cx, this.cy - this.r * 0.55, message, {
-      fontFamily: "Arial, system-ui, -apple-system",
+      fontFamily: UI_FONT,
       fontSize: Math.floor(this.r * 0.18) + "px",
       color: "#ffffff"
     }).setOrigin(0.5).setDepth(25);
@@ -1026,6 +1949,14 @@ class TapLockScene extends Phaser.Scene {
     };
   }
 
+  isTapOnRing(pointer) {
+    const dx = pointer.x - this.cx;
+    const dy = pointer.y - this.cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const thickness = Math.max(18, this.r * 0.18);
+    return Math.abs(dist - this.r) <= thickness * 0.5;
+  }
+
   isPerfectHit() {
     const dist = this.circularDistance(this.angle, this.zoneCenter);
     return dist <= this.zoneSize * 0.18;
@@ -1035,12 +1966,16 @@ class TapLockScene extends Phaser.Scene {
     if (!this.hitEmitter) return;
     const count = Phaser.Math.Between(10, 16);
     this.hitEmitter.emitParticleAt(x, y, count);
+    this.triggerImpactFlash(x, y, 0.9);
   }
 
   spawnPerfectBurst(x, y) {
     if (!this.perfectEmitter) return;
     const count = Phaser.Math.Between(14, 18);
     this.perfectEmitter.emitParticleAt(x, y, count);
+    if (this.missRingEmitter) this.missRingEmitter.emitParticleAt(x, y, 4);
+    if (this.perfectRayEmitter) this.perfectRayEmitter.emitParticleAt(x, y, Phaser.Math.Between(10, 14));
+    this.triggerImpactFlash(x, y, 1.15);
   }
 
   spawnMissBurst(x, y) {
@@ -1052,6 +1987,20 @@ class TapLockScene extends Phaser.Scene {
       const ringCount = Phaser.Math.Between(5, 8);
       this.missRingEmitter.emitParticleAt(x, y, ringCount);
     }
+  }
+
+  triggerImpactFlash(x, y, scale = 1) {
+    this.impactFlashAlpha = 1;
+    this.impactFlashX = x;
+    this.impactFlashY = y;
+    this.impactFlashRadius = this.r * 0.16 * scale;
+  }
+
+  triggerPerfectFlash() {
+    this.perfectFlashTime = 0;
+    this.perfectFlashAlpha = 1;
+    this.perfectFlashRadius = this.r * 0.35;
+    this.perfectFlashScreenAlpha = 0.35;
   }
 
   triggerPerfectFeedback() {
@@ -1067,9 +2016,14 @@ class TapLockScene extends Phaser.Scene {
     }, 140);
 
     this.cameras.main.shake(40, 0.002);
+    this.cameras.main.zoomTo(1.02, 80, "Quad.Out", true, (_cam, progress) => {
+      if (progress === 1) this.cameras.main.zoomTo(1.0, 120, "Quad.In");
+    });
+    this.perfectPulse = 1;
+    this.triggerPerfectFlash();
 
     const popup = this.add.text(this.cx, this.cy - this.r * 0.15, "PERFECT", {
-      fontFamily: "Arial, system-ui, -apple-system",
+      fontFamily: UI_FONT,
       fontSize: Math.floor(this.r * 0.22) + "px",
       color: "#ffffff"
     }).setOrigin(0.5).setDepth(8);
@@ -1106,6 +2060,12 @@ class TapLockScene extends Phaser.Scene {
     if (this.adPlaying || this.isShowingInterstitial) return;
 
     if (this.state === "ready") {
+      if (this.dailyLockOverlay && this.dailyLockOverlay.visible) return;
+      if (this.overGroup && this.overGroup.visible) return;
+      if (this.isTapOnRing(pointer)) {
+        this.cycleSkin();
+        return;
+      }
       if (this.mode === "daily") {
         const changed = this.ensureDailyData();
         if (changed) {
@@ -1122,6 +2082,7 @@ class TapLockScene extends Phaser.Scene {
       this.vibrate(5);
       this.state = "playing";
       this.hintText.setVisible(false);
+      if (this.hintGlow) this.hintGlow.setVisible(false);
       return;
     }
 
@@ -1148,14 +2109,22 @@ class TapLockScene extends Phaser.Scene {
       }
 
       this.score += 1;
-      this.scoreText.setText(String(this.score));
+      if (this.centerScoreText) this.centerScoreText.setText(String(this.score));
+      if (this.centerScoreGlow) this.centerScoreGlow.setText(String(this.score));
+      this.tweens.add({
+        targets: this.centerScoreText,
+        scale: 1.08,
+        duration: 90,
+        yoyo: true,
+        ease: "Quad.Out"
+      });
+      this.pulseGlow(this.centerScoreGlow, 0.46, 0.22, 240);
       this.cameras.main.shake(60, 0.003);
 
       this.speed = GAME.baseSpeed + this.score * GAME.speedGain;
       this.zoneSize = Math.max(GAME.zoneMinSize, GAME.zoneStartSize - this.score * GAME.zoneShrink);
       const rng = this.mode === "daily" ? this.dailyRng : null;
       this.zoneCenter = this.pickNewZoneCenter(0.9, rng);
-
       if (this.score >= 10 && this.score % 5 === 0) this.dir *= -1;
     } else {
       this.die();
@@ -1165,6 +2134,7 @@ class TapLockScene extends Phaser.Scene {
   die() {
     const { x, y } = this.getMarkerXY();
     this.state = "dead";
+    this.updateSettingsButtonState();
     this.deathsThisSession += 1;
     this.playMissSfx();
     this.vibrate([30]);
@@ -1187,6 +2157,7 @@ class TapLockScene extends Phaser.Scene {
     } else if (this.score > this.best) {
       this.best = this.score;
       localStorage.setItem("taplock_best", String(this.best));
+      this.checkSkinUnlocks();
     }
     this.updateBestText();
 
@@ -1264,55 +2235,118 @@ class TapLockScene extends Phaser.Scene {
       this.angle += this.dir * this.speed * dt;
     }
 
+    this.ringPulse = 0.5 + 0.5 * Math.sin(this.time.now * 0.0012);
+    this.bgShift += delta * 0.00008;
+    if (this.perfectPulse > 0) {
+      this.perfectPulse = Math.max(0, this.perfectPulse - delta / 400);
+    }
+
     if (this.revivePulse > 0) {
       this.revivePulse = Math.max(0, this.revivePulse - dt / 0.4);
+    }
+
+    if (this.impactFlashAlpha > 0) {
+      this.impactFlashAlpha = Math.max(0, this.impactFlashAlpha - delta / 180);
+    }
+    if (this.perfectFlashTime < this.perfectFlashDuration) {
+      this.perfectFlashTime = Math.min(this.perfectFlashDuration, this.perfectFlashTime + delta);
+      const t = this.perfectFlashTime / this.perfectFlashDuration;
+      this.perfectFlashAlpha = 1 - t;
+      this.perfectFlashRadius = Phaser.Math.Linear(this.r * 0.3, this.r * 0.5, t);
+      this.perfectFlashScreenAlpha = 0.4 * (1 - t);
+    } else {
+      this.perfectFlashAlpha = 0;
+      this.perfectFlashScreenAlpha = 0;
+    }
+
+    if (this.bgImg) {
+      const drift = 0.004;
+      this.bgImg.x = this.cx + Math.cos(this.time.now * 0.00012) * (this.scale.width * drift);
+      this.bgImg.y = this.cy + Math.sin(this.time.now * 0.0001) * (this.scale.height * drift);
+    }
+    if (this.bgImgFar) {
+      const drift = 0.002;
+      this.bgImgFar.x = this.cx + Math.cos(this.time.now * 0.00008) * (this.scale.width * drift);
+      this.bgImgFar.y = this.cy + Math.sin(this.time.now * 0.00007) * (this.scale.height * drift);
+    }
+    if (this.bgImgBloom) {
+      const drift = 0.006;
+      this.bgImgBloom.x = this.cx + Math.cos(this.time.now * 0.00016) * (this.scale.width * drift);
+      this.bgImgBloom.y = this.cy + Math.sin(this.time.now * 0.00014) * (this.scale.height * drift);
+      this.bgImgBloom.setAlpha(0.14 + this.ringPulse * 0.08);
+    }
+
+    if (this.enableExtraGlow && this.ringAura) {
+      const auraPulse = 1 + this.ringPulse * 0.06 + this.perfectPulse * 0.08;
+      this.ringAura.setPosition(this.cx, this.cy);
+      this.ringAura.setScale(this.ringAuraBaseScale * auraPulse);
+      this.ringAura.setAlpha(0.16 + this.ringPulse * 0.1 + this.perfectPulse * 0.2);
+    }
+    if (this.enableExtraGlow && this.ringHalo) {
+      const haloPulse = 1 + this.ringPulse * 0.08;
+      this.ringHalo.setPosition(this.cx, this.cy);
+      this.ringHalo.setScale(this.ringHaloBaseScale * haloPulse);
+      this.ringHalo.setAlpha(0.1 + this.ringPulse * 0.08);
+    }
+    if (this.flashSprite) {
+      if (this.perfectFlashAlpha > 0) {
+        const t = this.perfectFlashTime / this.perfectFlashDuration;
+        const scale = this.flashBaseScale * Phaser.Math.Linear(0.7, 1.05, t);
+        this.flashSprite.setPosition(this.cx, this.cy);
+        this.flashSprite.setScale(scale);
+        this.flashSprite.setAlpha(0.7 * this.perfectFlashAlpha);
+      } else {
+        this.flashSprite.setAlpha(0);
+      }
+    }
+
+    if (this.screenFlash) {
+      this.screenFlash.setAlpha(this.perfectFlashScreenAlpha);
+    }
+
+    if (this.hintText && this.state === "ready") {
+      const hintPulse = 0.5 + 0.5 * Math.sin(this.time.now * 0.004);
+      this.hintText.setAlpha(hintPulse);
+      if (this.enableExtraGlow && this.hintGlow) this.hintGlow.setAlpha(0.18 + hintPulse * 0.25);
     }
 
     this.draw();
   }
 
   draw() {
-    this.gRing.clear();
-    this.gZone.clear();
-    this.gMarker.clear();
+    if (this.gRingGlow) this.gRingGlow.clear();
+    if (this.gRingCore) this.gRingCore.clear();
+    if (this.gZone) this.gZone.clear();
+    if (this.gMarker) this.gMarker.clear();
+    if (this.gImpact) this.gImpact.clear();
 
-    // Ring
-    this.gRing.lineStyle(Math.max(6, this.r * 0.06), 0x23304f, 1);
-    this.gRing.beginPath();
-    this.gRing.arc(this.cx, this.cy, this.r, 0, Math.PI * 2);
-    this.gRing.strokePath();
+    this.drawRingLayers();
 
     // Revive pulse ring
-    if (this.revivePulse > 0) {
+    if (this.revivePulse > 0 && this.gRingGlow) {
       const pulse = this.revivePulse;
       const pulseR = this.r * (1 + (1 - pulse) * 0.12);
-      this.gRing.lineStyle(Math.max(4, this.r * 0.04), 0x8ec7ff, 0.6 * pulse);
-      this.gRing.beginPath();
-      this.gRing.arc(this.cx, this.cy, pulseR, 0, Math.PI * 2);
-      this.gRing.strokePath();
+      this.gRingGlow.lineStyle(Math.max(4, this.r * 0.04), 0x8ec7ff, 0.6 * pulse);
+      this.gRingGlow.beginPath();
+      this.gRingGlow.arc(this.cx, this.cy, pulseR, 0, Math.PI * 2);
+      this.gRingGlow.strokePath();
     }
 
-    // Zone arc (glowing)
-    const half = this.zoneSize / 2;
-    const zStart = this.zoneCenter - half;
-    const zEnd = this.zoneCenter + half;
-
-    // Outer glow
-    this.gZone.lineStyle(Math.max(10, this.r * 0.09), 0x3b82f6, 0.18);
-    this.gZone.beginPath();
-    this.gZone.arc(this.cx, this.cy, this.r, zStart, zEnd);
-    this.gZone.strokePath();
-
-    // Core zone
-    this.gZone.lineStyle(Math.max(6, this.r * 0.06), 0x60a5fa, 0.95);
-    this.gZone.beginPath();
-    this.gZone.arc(this.cx, this.cy, this.r, zStart, zEnd);
-    this.gZone.strokePath();
+    // Perfect ripple
+    if (this.perfectPulse > 0 && this.gRingGlow) {
+      const pulseR = this.r * (1 + (1 - this.perfectPulse) * 0.15);
+      this.gRingGlow.lineStyle(Math.max(5, this.r * 0.05), 0x8ec7ff, 0.5 * this.perfectPulse);
+      this.gRingGlow.beginPath();
+      this.gRingGlow.arc(this.cx, this.cy, pulseR, 0, Math.PI * 2);
+      this.gRingGlow.strokePath();
+    }
 
     // Marker position
     const mx = this.cx + Math.cos(this.angle) * this.r;
     const my = this.cy + Math.sin(this.angle) * this.r;
 
+    this.gMarker.fillStyle(0xffffff, 0.12);
+    this.gMarker.fillCircle(mx, my, this.rMarker * 2.2);
     this.gMarker.fillStyle(0xffffff, 1);
     this.gMarker.fillCircle(mx, my, this.rMarker);
 
@@ -1323,6 +2357,15 @@ class TapLockScene extends Phaser.Scene {
       this.cy + Math.sin(this.angle - this.dir * 0.14) * this.r,
       this.rMarker * 0.8
     );
+
+    if (this.gImpact && this.perfectFlashAlpha > 0) {
+      this.gImpact.fillStyle(0xffffff, 0.9 * this.perfectFlashAlpha);
+      this.gImpact.fillCircle(this.cx, this.cy, this.perfectFlashRadius);
+    }
+    if (this.gImpact && this.impactFlashAlpha > 0) {
+      this.gImpact.fillStyle(this.activeGlowEnd, 0.45 * this.impactFlashAlpha);
+      this.gImpact.fillCircle(this.impactFlashX, this.impactFlashY, this.impactFlashRadius);
+    }
   }
 }
 
