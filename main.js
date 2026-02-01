@@ -44,6 +44,13 @@ const GLOW_END = {
 };
 
 const UI_FONT = '"Orbitron", "Rajdhani", "Segoe UI", system-ui, -apple-system';
+const ASSET_VERSION = (typeof window !== "undefined" && window.ASSET_VERSION)
+  ? window.ASSET_VERSION
+  : Date.now().toString();
+const assetUrl = (path) => {
+  const sep = path.includes("?") ? "&" : "?";
+  return path + sep + "v=" + ASSET_VERSION;
+};
 
 class TapLockScene extends Phaser.Scene {
   constructor() {
@@ -126,7 +133,7 @@ class TapLockScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("bg_space", "assets/bg_space.png");
+    this.load.image("bg_space", assetUrl("assets/bg_space.png"));
   }
 
   create() {
